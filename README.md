@@ -82,11 +82,45 @@ The production base path is set by the `homepage` value in `package.json`.
 - react-modal
 - react-colorful
 
+## Contributing
+
+Contributions are welcome. If you want to help, please open an issue first (feature request or bug report), then submit a pull request.
+
+### Add a New Language
+
+1. Copy [https://github.com/1101Martin1101/DeluxeMenus-Editor/blob/master/src/lang/english.json](src/lang/english.json).
+2. Rename the copied file to your language code/name (must match the value used in the language list).
+3. Translate all keys.
+4. Add your language to [https://github.com/1101Martin1101/DeluxeMenus-Editor/blob/master/src/inventory.js](src/inventory.js) in the LANGLIST array.
+5. Open a pull request.
+
+### Add a New Field
+
+1. Open [https://github.com/1101Martin1101/DeluxeMenus-Editor/blob/master/src/inventory.js](src/inventory.js) and add a field object in fields().
+2. Add a matching translation key in [https://github.com/1101Martin1101/DeluxeMenus-Editor/blob/master/src/lang/english.json](src/lang/english.json).
+3. Ensure the field maps correctly to YAML export/import.
+4. Open a pull request.
+
+Field object example:
+
+```js
+{
+	name: LANG['your new field'],
+	value: 'your_new_field',
+	extra: false,
+	type: 'text',
+	tagName: 'input'
+}
+```
+
+- name: label from language file
+- value: YAML key
+- extra: if true, hidden by default
+- type: number | checkbox | text
+- tagName: input | textarea
+
 ## Credits
 
 - Original project: [TABmk/deluxemenus-editor](https://github.com/TABmk/deluxemenus-editor)
 - Fork reference: [vanhauluonsuy/deluxemenus-editor](https://github.com/vanhauluonsuy/deluxemenus-editor/)
 
-## License
-
-This project is provided as-is for community/server tooling use.
