@@ -123,4 +123,5 @@ Field object example:
 
 - Original project: [TABmk/deluxemenus-editor](https://github.com/TABmk/deluxemenus-editor)
 - Fork reference: [vanhauluonsuy/deluxemenus-editor](https://github.com/vanhauluonsuy/deluxemenus-editor/)
+- Item textures credit: [mc.nerothe.com](https://mc.nerothe.com)
 
