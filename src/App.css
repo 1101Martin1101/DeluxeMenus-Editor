@@ -1,0 +1,799 @@
+html {
+  padding: 0;
+  margin: 0;
+  box-sizing: border-box;
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'Minecraft', 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%);
+  background-attachment: fixed;
+  color: #e2e8f0;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 100vh;
+  margin: 0;
+  padding: 20px;
+  transition: background 0.5s ease;
+}
+
+.ace_gutter {
+  z-index: 0;
+}
+
+#ace-editor {
+  border-radius: 8px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+  width: 100% !important;
+  transition: height 0.3s ease-in-out, background 0.3s ease;
+}
+
+/* ── Two-column layout ── */
+#main-layout {
+  display: flex;
+  gap: 0;
+  align-items: flex-start;
+}
+
+#left-panel {
+  flex: 1;
+  min-width: 0;
+  /* space so content is not hidden behind fixed panel */
+  margin-right: calc(40vw + 30px);
+}
+
+#output {
+  width: 40vw;
+  min-width: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 15px;
+  background: rgba(10, 20, 35, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  backdrop-filter: blur(12px);
+  /* fixed on the right side, always same size */
+  position: fixed;
+  right: 20px;
+  top: 20px;
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  z-index: 100;
+}
+
+.expanded-output {
+  /* same width — no jump on show extra toggle */
+  width: 40vw !important;
+  background: rgba(10, 20, 35, 0.75) !important;
+}
+
+#itemsSearch {
+  display: grid;
+  grid-template-columns: repeat(9, 38px);
+  justify-content: center;
+  gap: 3px;
+  overflow-y: auto;
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+}
+
+.value {
+  margin-top: 10px;
+}
+
+.value span {
+  font-weight: 500;
+  color: #94a3b8;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.content {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-direction: column;
+}
+
+button:focus { outline: 0; }
+
+input:not([type="checkbox"]), textarea {
+  font-family: 'Minecraft', sans-serif;
+  background-color: rgba(15, 23, 42, 0.6);
+  color: #f8fafc;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-top: 6px;
+  transition: all 0.2s ease;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+textarea {
+  min-height: 120px;
+  resize: vertical;
+  line-height: 1.5;
+  background-color: rgba(15, 23, 42, 0.7);
+  border-left: 3px solid #38bdf8;
+}
+
+input:not([type="checkbox"]):focus, textarea:focus {
+  outline: none;
+  border-color: #38bdf8;
+  background-color: rgba(15, 23, 42, 0.8);
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
+}
+
+button {
+  font-family: 'Minecraft', sans-serif;
+  font-weight: 500;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  padding: 10px 16px;
+  cursor: pointer;
+  margin: 4px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+button:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+
+button:active {
+  transform: translateY(0);
+}
+
+.download {
+  width: 100%;
+  margin: 0;
+}
+
+.inventory {
+  width: fit-content;
+  height: fit-content;
+  background: #2b2b2b;
+  border: 2px solid #1a1a1a;
+  border-radius: 8px;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4), inset 2px 2px 0px rgba(255,255,255,0.1);
+  padding: 10px;
+  margin-bottom: 4px;
+  transition: transform 0.3s ease;
+}
+
+.inventory:hover {
+  transform: scale(1.01);
+}
+
+#title {
+  max-height: 20px;
+  overflow: hidden;
+  margin: 5px 10px 15px 10px;
+  color: #fff;
+}
+
+#title span {
+  font-family: 'Minecraft', monospace !important;
+}
+
+.number {
+  text-align: right;
+  width: 22.5px;
+  font-size: 15px;
+  color: #fefefe;
+  position: relative;
+  text-shadow: #333 1px 2px 1px;
+  top: -11px;
+  right: -7px;
+  cursor: default;
+  z-index: 2;
+}
+
+.slot {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  justify-content: center;
+  background: #8b8b8b;
+  box-shadow: inset 2px 2px 0px rgba(0, 0, 0, 0.5), inset -2px -2px 0px rgba(255, 255, 255, 0.3);
+  margin: 1px;
+  border-radius: 2px;
+  position: relative;
+  transition: transform 0.1s ease, filter 0.1s ease;
+}
+
+.slot:hover {
+  filter: brightness(1.1);
+  transform: scale(1.05);
+  z-index: 10;
+}
+
+.slotSpace {
+  display: grid;
+  grid-template-columns: repeat(9, 38px);
+}
+
+.invisible {
+  visibility: hidden;
+}
+
+.item {
+  margin: 3px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 30px;
+  height: 30px;
+  z-index: 1;
+}
+
+.item img {
+  width: 30px;
+  image-rendering: pixelated;
+}
+
+.ghostItem {
+  opacity: 0.5;
+}
+
+.ghostItem img {
+  width: 30px;
+  image-rendering: pixelated;
+}
+
+.ghostItem .number {
+  top: -20px;
+  right: -13px;
+}
+
+.copy {
+  font-size: 18px;
+  width: 100%;
+  display: flex;
+  justify-content: flex-end;
+  color: #cbd5e1;
+}
+
+a {
+  color: #38bdf8;
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+.selectedSlot {
+  background: #a5a5a5;
+  box-shadow: inset 2px 2px 0px rgba(0, 0, 0, 0.6), inset -2px -2px 0px rgba(255, 255, 255, 0.5), 0 0 0 2px #38bdf8;
+  z-index: 5;
+}
+
+.Dropdown-control {
+  background: rgba(15, 23, 42, 0.6) !important;
+  color: #f8fafc !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 6px !important;
+  padding: 8px 12px !important;
+  transition: all 0.2s ease;
+}
+
+.Dropdown-control:hover {
+  background: rgba(15, 23, 42, 0.8) !important;
+  border-color: rgba(255, 255, 255, 0.3) !important;
+}
+
+.Dropdown-menu {
+  background-color: #1e293b !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 6px !important;
+  margin-top: 4px !important;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.5) !important;
+}
+
+.Dropdown-option {
+  color: #cbd5e1 !important;
+}
+
+.Dropdown-option:hover {
+  background-color: #334155 !important;
+  color: #fff !important;
+}
+
+.Dropdown-option.is-selected {
+  background-color: #38bdf8 !important;
+  color: #fff !important;
+}
+
+.rc-tooltip-inner {
+  border: 1px solid #38bdf8 !important;
+  color: #fff !important;
+  background-color: rgba(15, 23, 42, 0.95) !important;
+  border-radius: 6px !important;
+  font-family: 'Inter', sans-serif !important;
+  padding: 8px 12px !important;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.3) !important;
+}
+
+.yamlOpts {
+  width: 100%;
+  height: 180px;
+  font-family: 'Courier New', Courier, monospace;
+}
+
+.upload-btn-wrapper {
+  position: relative;
+  overflow: hidden;
+  display: block;
+  width: 100%;
+}
+
+.upload-btn-wrapper input[type=file] {
+  font-size: 100px;
+  position: absolute;
+  left: 0;
+  top: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Form refinement */
+.value input, .value textarea {
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.value input[type="number"] {
+  max-width: 90px;
+  padding: 5px 8px;
+  width: auto;
+}
+
+/* Modal adjustments */
+.page-btn {
+  background: #38bdf8;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: all 0.2s ease;
+}
+
+.page-btn:hover:not(:disabled) {
+  background: #0ea5e9;
+  transform: translateY(-1px);
+}
+
+.page-btn:disabled {
+  background: #94a3b8;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* ── Command quick-action chips ── */
+.cmd-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 6px;
+}
+.cmd-chips {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.cmd-chip {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 5px;
+  color: #94a3b8;
+  font-size: 11px;
+  font-family: 'Minecraft', monospace;
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  line-height: 1.4;
+}
+.cmd-chip:hover {
+  background: rgba(56, 189, 248, 0.15);
+  border-color: rgba(56, 189, 248, 0.4);
+  color: #38bdf8;
+}
+.cmd-chip.cmd-tags-toggle {
+  background: rgba(148, 163, 184, 0.08);
+  border-color: rgba(148, 163, 184, 0.25);
+  color: #64748b;
+}
+.cmd-chip.cmd-tags-toggle:hover,
+.cmd-chip.cmd-tags-toggle.active {
+  background: rgba(99, 102, 241, 0.18);
+  border-color: rgba(99, 102, 241, 0.45);
+  color: #a5b4fc;
+}
+.cmd-tags-dropdown {
+  background: #1a2333;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.6);
+  max-height: 260px;
+  overflow-y: auto;
+  margin-bottom: 4px;
+}
+.cmd-tags-dropdown::-webkit-scrollbar { width: 5px; }
+.cmd-tags-dropdown::-webkit-scrollbar-track { background: transparent; }
+.cmd-tags-dropdown::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
+.cmd-tags-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 10px;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  transition: background 0.12s;
+}
+.cmd-tags-row:last-child { border-bottom: none; }
+.cmd-tags-row:hover { background: rgba(99, 102, 241, 0.12); }
+.cmd-tags-tag {
+  font-family: 'Minecraft', monospace;
+  font-size: 11px;
+  color: #7dd3fc;
+  white-space: nowrap;
+  min-width: 160px;
+  flex-shrink: 0;
+}
+.cmd-tags-desc {
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.35;
+}
+.cmd-tags-row:hover .cmd-tags-desc { color: #94a3b8; }
+.cmd-field textarea {
+  margin-top: 0;
+}
+
+/* ── Gradient button + input row ── */
+.input-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+}
+.input-row input,
+.input-row textarea {
+  flex: 1;
+  min-width: 0;
+  margin-top: 0;
+}
+.gradient-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 17px;
+  padding: 2px 3px;
+  line-height: 1;
+  opacity: 0.55;
+  transition: opacity 0.15s, transform 0.15s;
+  flex-shrink: 0;
+}
+.gradient-btn:hover {
+  opacity: 1;
+  transform: scale(1.2);
+}
+
+/* Input + gradient button side by side */
+.value:has(.gradient-btn) {
+  display: flex;
+  flex-direction: column;
+}
+.value:has(.gradient-btn) input,
+.value:has(.gradient-btn) textarea {
+  flex: 1;
+}
+.value:has(.gradient-btn) .input-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ── Lang bar ── */
+.lang-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+.lang-select-wrap {
+  position: relative;
+}
+
+.lang-current-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 6px;
+  color: #e2e8f0;
+  font-size: 13px;
+  padding: 5px 10px;
+  cursor: pointer;
+  min-width: 120px;
+  transition: background 0.15s;
+}
+.lang-current-btn:hover {
+  background: rgba(255,255,255,0.12);
+}
+.lang-current-btn img {
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.lang-dropdown-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 999;
+  background: #1e293b;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 8px;
+  padding: 4px;
+  min-width: 150px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+}
+
+.lang-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #cbd5e1;
+  transition: background 0.12s;
+}
+.lang-option:hover {
+  background: rgba(255,255,255,0.08);
+  color: #f8fafc;
+}
+.lang-option.active {
+  background: rgba(56,189,248,0.15);
+  color: #38bdf8;
+}
+.lang-option img {
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* ── Toolbar ── */
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+
+.toolbar button {
+  font-size: 13px;
+  padding: 8px 14px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #e2e8f0;
+  transition: all 0.18s ease;
+}
+
+.toolbar button:hover {
+  background: rgba(56, 189, 248, 0.15);
+  border-color: rgba(56, 189, 248, 0.4);
+  color: #38bdf8;
+  transform: none;
+  box-shadow: none;
+}
+
+/* ── Info sections (menu info / item info) ── */
+.info-section {
+  margin-top: 18px;
+  padding: 16px 18px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 10px;
+}
+
+.section-header {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #38bdf8;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(56, 189, 248, 0.18);
+}
+
+/* ── Output panel buttons ── */
+#output .download {
+  font-size: 13px;
+  padding: 9px 14px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #e2e8f0;
+  transition: all 0.18s ease;
+  text-align: left;
+}
+
+#output .download:hover {
+  background: rgba(56, 189, 248, 0.12);
+  border-color: rgba(56, 189, 248, 0.35);
+  color: #38bdf8;
+  transform: none;
+  box-shadow: none;
+}
+
+/* ── Ace Editor (twilight theme adjustments) ── */
+#ace-editor {
+  border-radius: 8px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+  width: 100% !important;
+}
+
+/* Keep code editor with monospace font, not Minecraft */
+.ace_editor,
+.ace_editor * {
+  font-family: 'Courier New', Courier, monospace !important;
+}
+
+/* ── Custom checkboxes ── */
+input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  background: rgba(15, 23, 42, 0.7);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 5px;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+  vertical-align: middle;
+  margin-top: 0;
+}
+
+input[type="checkbox"]:hover {
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.15);
+}
+
+input[type="checkbox"]:checked {
+  background: #38bdf8;
+  border-color: #38bdf8;
+}
+
+input[type="checkbox"]:checked::after {
+  content: '✓';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+input[type="checkbox"]:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.25);
+}
+
+/* Row layout for checkbox fields */
+.field-hidden {
+  display: none !important;
+}
+
+.value:not(.field-hidden):has(input[type="checkbox"]) {
+  display: flex !important;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  margin-top: 4px;
+}
+
+.value:not(.field-hidden):has(input[type="checkbox"]) span {
+  order: 2;
+  font-size: 13px;
+  color: #cbd5e1;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.value:not(.field-hidden):has(input[type="checkbox"]) input {
+  order: 1;
+  flex-shrink: 0;
+}
+
+/* ── Gradient modal — stop control buttons ───────────────────────── */
+.gstop-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 7px;
+  border-radius: 6px;
+  line-height: 1;
+  font-size: 13px;
+  color: #94a3b8;
+  transition: background 0.15s, color 0.15s;
+}
+.gstop-btn:hover:not(:disabled) {
+  background: rgba(255,255,255,0.1);
+  color: #e2e8f0;
+}
+.gstop-btn:disabled {
+  color: #2d3f54;
+  cursor: default;
+}
+.gstop-remove {
+  color: #f87171;
+  font-size: 14px;
+}
+.gstop-remove:hover:not(:disabled) {
+  background: rgba(248,113,113,0.15);
+  color: #fca5a5;
+}
+
+/* ── Gradient modal — RGB +/− buttons ───────────────────────────── */
+.rgb-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  width: 18px;
+  height: 100%;
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+  transition: background 0.12s, color 0.12s;
+}
+.rgb-btn:hover {
+  background: rgba(255,255,255,0.1);
+  color: #e2e8f0;
+}
+.eyedrop-btn:hover {
+  background: rgba(56,189,248,0.15) !important;
+  color: #38bdf8 !important;
+  border-color: rgba(56,189,248,0.4) !important;
+}
