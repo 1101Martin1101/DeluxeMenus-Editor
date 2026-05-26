@@ -88,16 +88,16 @@ Contributions are welcome. If you want to help, please open an issue first (feat
 
 ### Add a New Language
 
-1. Copy [https://github.com/1101Martin1101/DeluxeMenus-Editor/blob/master/src/lang/english.json](src/lang/english.json).
+1. Copy [src/lang/english.json](https://github.com/1101Martin1101/DeluxeMenus-Editor/blob/master/src/lang/english.json).
 2. Rename the copied file to your language code/name (must match the value used in the language list).
 3. Translate all keys.
-4. Add your language to [https://github.com/1101Martin1101/DeluxeMenus-Editor/blob/master/src/inventory.js](src/inventory.js) in the LANGLIST array.
+4. Add your language to [src/inventory.js](https://github.com/1101Martin1101/DeluxeMenus-Editor/blob/master/src/inventory.js) in the LANGLIST array.
 5. Open a pull request.
 
 ### Add a New Field
 
-1. Open [https://github.com/1101Martin1101/DeluxeMenus-Editor/blob/master/src/inventory.js](src/inventory.js) and add a field object in fields().
-2. Add a matching translation key in [https://github.com/1101Martin1101/DeluxeMenus-Editor/blob/master/src/lang/english.json](src/lang/english.json).
+1. Open [src/inventory.js](https://github.com/1101Martin1101/DeluxeMenus-Editor/blob/master/src/inventory.js) and add a field object in fields().
+2. Add a matching translation key in [src/lang/english.json](https://github.com/1101Martin1101/DeluxeMenus-Editor/blob/master/src/lang/english.json).
 3. Ensure the field maps correctly to YAML export/import.
 4. Open a pull request.
 
