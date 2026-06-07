@@ -364,6 +364,7 @@ export class Inventory extends Component {
   state = {
     menu_title: LANG['Menu default title'],
     open_command: 'menu',
+    register_command: false,
     size: 0,
     showModal: false,
     showYAMLOpts: false,
@@ -678,6 +679,7 @@ export class Inventory extends Component {
       this.setState({
         menu_title: content.menu_title || this.state.menu_title || LANG['Menu default title'],
         open_command: content.open_command || this.state.open_command || 'menu',
+        register_command: content.register_command === true,
         size: size,
         items: newItems
       });
@@ -714,9 +716,12 @@ export class Inventory extends Component {
     let _state = {
       menu_title: this.state.menu_title,
       open_command: this.state.open_command,
-      size: this.state.size,
-      items: { ...items },
     }
+    if (this.state.register_command) {
+      _state.register_command = true;
+    }
+    _state.size = this.state.size;
+    _state.items = { ...items };
     return _state;
   }
   
@@ -987,6 +992,7 @@ export class Inventory extends Component {
         this.setState({
           menu_title: content.menu_title || LANG['Menu default title'],
           open_command: content.open_command || 'menu',
+          register_command: content.register_command === true,
           size: size,
           items: newItems,
           selected: 0,
@@ -1088,6 +1094,17 @@ export class Inventory extends Component {
             <div className="value">
               <span>{LANG['open_command']}:</span>
               <input type="text" name="open_command" value={this.state.open_command} onChange={this.handleopen_command} />
+            </div>
+            <div className="value">
+              <span>register_command:</span>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <input
+                  type="checkbox"
+                  name="register_command"
+                  checked={this.state.register_command}
+                  onChange={(e) => this.setState({ register_command: e.target.checked }, this.updateAceFromGrid)}
+                />
+              </label>
             </div>
           </div>
 
