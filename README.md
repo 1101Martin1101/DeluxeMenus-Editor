@@ -67,13 +67,42 @@ npm run build
 
 ## Deployment
 
-The app is configured for GitHub Pages deployment:
+The app is deployed as part of the [mc-api](https://mc-api.kulih.eu) site and is
+live at **https://mc-api.kulih.eu/dm-editor/**.
+
+The source lives in the `dm-editor-src/` directory of the mc-api project, so the
+editor and the site it belongs to stay together. The production base path is
+set by the `homepage` value in `package.json` (currently `/dm-editor/`), so all
+bundles and item icons are loaded from that sub-path.
+
+Build and publish from that directory:
 
 ```bash
-npm run deploy
+cd dm-editor-src
+./deploy.sh
 ```
 
-The production base path is set by the `homepage` value in `package.json`.
+`deploy.sh` runs `npm run build`, drops the source maps and copies `build/`
+into `../public/dm-editor/` (pass another directory as the first argument to
+deploy elsewhere).
+
+The API server serves that folder with `express.static` before rate limiting;
+see `src/api/app.ts` in the mc-api repo. No server restart is needed — only a
+browser refresh (hashed JS/CSS files are immutable, the HTML shell is
+`no-store`).
+
+`npm run deploy` (GitHub Pages) is no longer used by this deployment.
+
+### Branding
+
+The editor uses the same visual language as the rest of mc-api.kulih.eu:
+
+- palette tokens (`--bg`, `--accent`, …) are defined at the top of
+  [src/App.css](src/App.css) and must match the site's `:root` block,
+- the shared site header is injected by mc-api at request time (it is not part
+  of this build), so navigation links are maintained in one place,
+- the favicon, `theme-color`, canonical URL and Open Graph tags live in
+  [public/index.html](public/index.html).
 
 ## Tech Stack
 

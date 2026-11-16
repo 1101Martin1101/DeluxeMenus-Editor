@@ -83,10 +83,10 @@ const customStyles = {
     marginRight           : '-50%',
     transform             : 'translate(-50%, -50%)',
     boxShadow             : '0 20px 40px rgba(0,0,0,0.6)',
-    background            : '#1e293b',
-    border                : '1px solid rgba(255, 255, 255, 0.1)',
+    background            : '#161d29',
+    border                : '1px solid #2b3543',
     borderRadius          : '12px',
-    color                 : '#f8fafc',
+    color                 : '#e6edf3',
     padding               : '20px'
   },
   overlay: {
@@ -1073,6 +1073,9 @@ export class Inventory extends Component {
                   amount={(Number.isInteger(el.parent) && this.state.items[el.parent]) ? this.state.items[el.parent].amount : el.amount}
                   isSelected={this.state.selected === el.id}
                   icon={(Number.isInteger(el.parent) && this.state.items[el.parent]) ? this.state.items[el.parent].icon : el.icon}
+                  material={this.computedMaterial(el.id)}
+                  enchantments={(Number.isInteger(el.parent) && this.state.items[el.parent]) ? this.state.items[el.parent].enchantments : el.enchantments}
+                  hide_enchantments={(Number.isInteger(el.parent) && this.state.items[el.parent]) ? this.state.items[el.parent].hide_enchantments : el.hide_enchantments}
                 />
               ))}
             </div>
@@ -1284,6 +1287,9 @@ export class Inventory extends Component {
                  id={el.id}
                  amount={Number.isInteger(el.parent) ? this.state.items[el.parent].amount : el.amount}
                  icon={Number.isInteger(el.parent) ? this.state.items[el.parent].icon : el.icon}
+                 material={this.computedMaterial(el.id)}
+                 enchantments={el.enchantments}
+                 hide_enchantments={el.hide_enchantments}
                />
              ))}
            </div>

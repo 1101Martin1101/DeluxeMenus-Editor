@@ -82,10 +82,10 @@ const gradientStyles = {
     bottom: 'auto',
     marginRight: '-50%',
     transform: 'translate(-50%, -50%)',
-    background: '#1e293b',
+    background: '#161d29',
     border: '1px solid rgba(255,255,255,0.1)',
     borderRadius: '12px',
-    color: '#f8fafc',
+    color: '#e6edf3',
     padding: '22px',
   },
   overlay: {
@@ -99,7 +99,7 @@ const LABEL = {
   fontWeight: 700,
   textTransform: 'uppercase',
   letterSpacing: 1,
-  color: '#38bdf8',
+  color: '#5eba5c',
   marginBottom: 6,
   display: 'block',
 };
@@ -127,7 +127,8 @@ const MC_COLORS = [
 export class GradientModal extends Component {
   state = {
     text: '',
-    colors: ['#54daf4', '#545eb6'],
+    // Brand gradient of mc-api.kulih.eu (same stops as the site hero title).
+    colors: ['#7dd67a', '#5eba5c', '#2e7d32'],
     bold: false,
     italic: false,
     strikethrough: false,
@@ -135,7 +136,7 @@ export class GradientModal extends Component {
     obfuscated: false,
     reset: false,
     output: '',
-    hexInputs: ['#54daf4', '#545eb6'],
+    hexInputs: ['#7dd67a', '#5eba5c', '#2e7d32'],
     activeColor: 0,
     pickerPos: null,
   };
@@ -270,8 +271,8 @@ export class GradientModal extends Component {
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <span style={{ fontWeight: 700, fontSize: 15 }}>🎨 {L['gradient_title'] || 'Gradient Generator'}</span>
-          {fieldName && <span style={{ fontSize: 12, color: '#94a3b8' }}>→ {fieldName}</span>}
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: 20, lineHeight: 1 }}>✕</button>
+          {fieldName && <span style={{ fontSize: 12, color: '#8b949e' }}>→ {fieldName}</span>}
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: 20, lineHeight: 1 }}>✕</button>
         </div>
 
         {/* Text input */}
@@ -281,7 +282,7 @@ export class GradientModal extends Component {
           value={text}
           onChange={e => this.setState({ text: e.target.value, output: '' })}
           placeholder={L['gradient_placeholder'] || 'Enter text...'}
-          style={{ width: '100%', marginBottom: 12, boxSizing: 'border-box', resize: 'vertical', fontFamily: 'inherit', fontSize: 13, background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 7, color: '#f8fafc', padding: '7px 10px' }}
+          style={{ width: '100%', marginBottom: 12, boxSizing: 'border-box', resize: 'vertical', fontFamily: 'inherit', fontSize: 13, background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 7, color: '#e6edf3', padding: '7px 10px' }}
         />
 
         {/* Live gradient bar */}
@@ -313,9 +314,9 @@ export class GradientModal extends Component {
                 style={{
                   width: 32, height: 32, borderRadius: 7,
                   background: c,
-                  border: `2px solid ${activeColor === i ? '#38bdf8' : 'rgba(255,255,255,0.25)'}`,
+                  border: `2px solid ${activeColor === i ? '#5eba5c' : 'rgba(255,255,255,0.25)'}`,
                   cursor: 'pointer',
-                  boxShadow: activeColor === i ? '0 0 0 2px #38bdf8' : '0 2px 6px rgba(0,0,0,0.4)',
+                  boxShadow: activeColor === i ? '0 0 0 2px #5eba5c' : '0 2px 6px rgba(0,0,0,0.4)',
                   flexShrink: 0,
                   transition: 'box-shadow 0.15s',
                 }}
@@ -346,12 +347,12 @@ export class GradientModal extends Component {
                 style={{
                   flex: 1, fontFamily: 'monospace', fontSize: 13, letterSpacing: 1,
                   background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)',
-                  borderRadius: 6, color: '#f8fafc', padding: '4px 8px',
+                  borderRadius: 6, color: '#e6edf3', padding: '4px 8px',
                 }}
               />
 
               {/* Stop index label */}
-              <span style={{ fontSize: 10, color: '#64748b', minWidth: 16, textAlign: 'center', fontWeight: 600 }}>{i + 1}</span>
+              <span style={{ fontSize: 10, color: '#6e7681', minWidth: 16, textAlign: 'center', fontWeight: 600 }}>{i + 1}</span>
 
               {/* Move up */}
               <button
@@ -388,7 +389,7 @@ export class GradientModal extends Component {
               top: this.state.pickerPos.top,
               left: this.state.pickerPos.left,
               zIndex: 9999,
-              background: '#1e293b',
+              background: '#161d29',
               border: '1px solid rgba(255,255,255,0.12)',
               borderRadius: 12,
               padding: '12px',
@@ -427,12 +428,12 @@ export class GradientModal extends Component {
                         style={{
                           width: 36, textAlign: 'center',
                           background: 'transparent', border: 'none', outline: 'none',
-                          color: '#f8fafc', fontFamily: 'monospace', fontSize: 13, padding: '5px 0',
+                          color: '#e6edf3', fontFamily: 'monospace', fontSize: 13, padding: '5px 0',
                         }}
                       />
                       <button onClick={() => setVal(val + 1)} className="rgb-btn">+</button>
                     </div>
-                    <span style={{ fontSize: 10, color: '#64748b', fontWeight: 700 }}>{ch}</span>
+                    <span style={{ fontSize: 10, color: '#6e7681', fontWeight: 700 }}>{ch}</span>
                   </div>
                 );
               })}
@@ -452,7 +453,7 @@ export class GradientModal extends Component {
                       <path d="M20.71 5.63l-2.34-2.34a1 1 0 00-1.41 0l-3.12 3.12-1.41-1.42-1.42 1.42 1.41 1.41-6.6 6.6A2 2 0 005 16v3h3a2 2 0 001.42-.59l6.6-6.6 1.41 1.41 1.42-1.42-1.42-1.41 3.12-3.12a1 1 0 000-1.41z"/>
                     </svg>
                   </button>
-                  <span style={{ fontSize: 10, color: '#64748b', fontWeight: 700 }}>👁</span>
+                  <span style={{ fontSize: 10, color: '#6e7681', fontWeight: 700 }}>👁</span>
                 </div>
               )}
             </div>
@@ -467,7 +468,7 @@ export class GradientModal extends Component {
         {/* Minecraft quick palette */}
         <label style={LABEL}>
           {L['gradient_mc_colors'] || 'Minecraft colors'}
-          <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, fontSize: 10, color: '#64748b', marginLeft: 8 }}>
+          <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, fontSize: 10, color: '#6e7681', marginLeft: 8 }}>
             {activeColor < colors.length
               ? `${L['gradient_mc_hint_change'] || '\u2014 click to change stop'} ${activeColor + 1}`
               : (L['gradient_mc_hint_add'] || '\u2014 click to add')}
@@ -484,7 +485,7 @@ export class GradientModal extends Component {
                 background: mc.hex,
                 border: '2px solid rgba(255,255,255,0.15)',
                 cursor: 'pointer',
-                boxShadow: colors.includes(mc.hex) ? `0 0 0 2px #38bdf8` : 'none',
+                boxShadow: colors.includes(mc.hex) ? `0 0 0 2px #5eba5c` : 'none',
                 transition: 'transform 0.1s',
               }}
               onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.25)'}
@@ -502,9 +503,9 @@ export class GradientModal extends Component {
               style={{
                 display: 'flex', alignItems: 'center', gap: 5,
                 fontSize: 12, cursor: 'pointer', padding: '3px 8px',
-                borderRadius: 6, border: `1px solid ${this.state[key] ? '#38bdf8' : 'rgba(255,255,255,0.1)'}`,
+                borderRadius: 6, border: `1px solid ${this.state[key] ? '#5eba5c' : '#2b3543'}`,
                 background: this.state[key] ? 'rgba(56,189,248,0.12)' : 'rgba(255,255,255,0.04)',
-                color: this.state[key] ? '#f8fafc' : '#94a3b8',
+                color: this.state[key] ? '#e6edf3' : '#8b949e',
                 userSelect: 'none',
                 ...(this.state[key] ? style : {}),
               }}
@@ -540,7 +541,7 @@ export class GradientModal extends Component {
             <div style={{
               background: 'rgba(0,0,0,0.35)', borderRadius: 7, padding: '9px 12px',
               fontFamily: 'monospace', fontSize: 12, wordBreak: 'break-all',
-              color: '#e2e8f0', lineHeight: 1.6, marginBottom: 10,
+              color: '#e6edf3', lineHeight: 1.6, marginBottom: 10,
               userSelect: 'all', maxHeight: 80, overflowY: 'auto',
             }}>
               {output}

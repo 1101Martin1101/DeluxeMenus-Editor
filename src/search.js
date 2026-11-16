@@ -78,6 +78,7 @@ export class Search extends Component {
               <Slot
                 selectedSlot={this.props.selectedFromSearch}
                 icon={itm.icon}
+                material={itm.filename}
                 isSearch={true}
               />
             </div>

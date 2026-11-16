@@ -37,11 +37,11 @@ export function parseMC(text) {
   return segs;
 }
 
-export function MCText({ children, style }) {
+export function MCText({ children, style, className }) {
   if (!children) return null;
   const lines = String(children).split('\n');
   return (
-    <span style={style}>
+    <span className={className} style={style}>
       {lines.map((line, li) => (
         <span key={li}>
           {li > 0 && <br />}
