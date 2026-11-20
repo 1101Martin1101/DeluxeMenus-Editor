@@ -19,7 +19,10 @@ export class Item extends Component {
           src={src}
           title={name}
           alt={name}
-          onError={(e) => { e.target.src = FALLBACK; e.target.onerror = null; }}
+          onError={(e) => {
+            e.target.src = `${process.env.PUBLIC_URL}/brand-icon-192.png`;
+            e.target.onerror = null;
+          }}
         />
         <div className="number">
           {count}

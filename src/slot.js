@@ -6,10 +6,11 @@ import ReactDOM from 'react-dom';
 import { MCText } from './mcparse';
 
 /** "CYAN_DYE" -> "Cyan Dye", "minecraft:diamond_sword" -> "Diamond Sword". */
-const prettyName = (raw) => {
+const prettyName = (raw, customHeadLabel = 'Custom head') => {
   if (!raw) return '';
   const value = String(raw).trim();
   if (!value || value.toLowerCase() === 'none') return '';
+  if (/^(basehead-|head-)/i.test(value)) return customHeadLabel;
 
   return value
     .replace(/^minecraft:/i, '')
@@ -120,6 +121,12 @@ export class Slot extends Component {
       img={this.props.icon || 'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAQAAADZc7J/AAAAF0lEQVRIDWMYBaNgFIyCUTAKRsEoQAMACCAAATXQUGAAAAAASUVORK5CYII='}
       count={this.props.amount}
       />
+    {this.props.showPriority && this.props.priority !== undefined && this.props.priority !== null && this.props.priority !== '' && (
+      <span className="slot-priority">{this.props.priority}</span>
+    )}
+    {this.props.requirementMet === false && (
+      <span className="slot-requirement" title="Requirements not met in simulation">!</span>
+    )}
   </div>
 
   hasTooltipContent = () => {
@@ -138,12 +145,31 @@ export class Slot extends Component {
     const loreText = Array.isArray(this.props.lore)
       ? this.props.lore.join('\n')
       : (this.props.lore || '');
-    const displayName = this.props.display_name || '';
-    const materialName = prettyName(this.props.material);
+    const rawDisplayName = this.props.display_name || '';
+    // A name containing only colour codes (e.g. "&a") shows nothing useful.
+    const displayName = String(rawDisplayName)
+      .replace(/&(#[0-9a-fA-F]{6}|[0-9a-fk-orA-FK-OR])/g, '')
+      .trim()
+      ? rawDisplayName
+      : '';
+    const lang = this.props.lang || {};
+    const customHead = lang.ui_custom_head || 'Custom head';
+    const materialName = prettyName(this.props.material, customHead);
     const enchantments = this.props.hide_enchantments
       ? []
       : parseEnchantments(this.props.enchantments);
+    const priorityText = (lang.ui_priority_line || 'Priority {priority}').replace('{priority}', this.props.priority);
+    const requirementsNotMet = lang.ui_requirements_not_met || 'Requirements not met:';
+    const clickMet = lang.ui_click_met || 'Click requirement met';
+    const clickNotMet = lang.ui_click_not_met || 'Click requirement not met:';
+    const localizeCheck = (text) => String(text || '')
+      .replace(/\(now /g, `(${lang.ui_now || 'now'} `)
+      .replace(/\(not simulatable\)/g, `(${lang.ui_not_simulatable || 'not simulatable'})`)
+      .replace(/^NOT permission /, `${lang.ui_not_permission_word || 'NOT permission'} `)
+      .replace(/^permission /, `${lang.ui_permission || 'permission'} `);
     const hasTooltip = displayName || loreText || materialName || enchantments.length;
+    const hasPriority = this.props.priority !== undefined && this.props.priority !== null && this.props.priority !== '';
+    const showPriorityLine = hasPriority && this.props.showPriority;
 
     const tooltip = hasTooltip && this.state.hover ? ReactDOM.createPortal(
       <div
@@ -155,7 +181,7 @@ export class Slot extends Component {
           ? (
             <MCText
               className="mc-tooltip-name"
-              style={{ display: 'block', marginBottom: (loreText || enchantments.length) ? 4 : 0 }}
+              style={{ display: 'block', marginBottom: (loreText || enchantments.length || showPriorityLine) ? 4 : 0 }}
             >
               {displayName}
             </MCText>
@@ -163,6 +189,31 @@ export class Slot extends Component {
           : (materialName
             ? <span className="mc-tooltip-name">{materialName}</span>
             : null)}
+        {showPriorityLine && (
+          <div className="mc-tooltip-priority">{priorityText}</div>
+        )}
+        {this.props.requirementMet === false && (
+          <div className="mc-tooltip-requirement">
+            {requirementsNotMet}
+            {(this.props.requirementChecks || [])
+              .filter(check => !check.pass)
+              .slice(0, 4)
+              .map((check, index) => (
+                <div key={index} className="mc-tooltip-check">- {localizeCheck(check.text)}</div>
+              ))}
+          </div>
+        )}
+        {this.props.simulateRequirements && this.props.hasClickRequirement && (
+          <div className={`mc-tooltip-click ${this.props.clickRequirementMet ? 'ok' : 'fail'}`}>
+            {this.props.clickRequirementMet ? clickMet : clickNotMet}
+            {!this.props.clickRequirementMet && (this.props.clickRequirementChecks || [])
+              .filter(check => !check.pass)
+              .slice(0, 4)
+              .map((check, index) => (
+                <div key={index} className="mc-tooltip-check">- {localizeCheck(check.text)}</div>
+              ))}
+          </div>
+        )}
         {enchantments.length > 0 && (
           <div className="mc-tooltip-enchants">
             {enchantments.map((enchant, i) => (

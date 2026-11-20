@@ -86,6 +86,14 @@ cd dm-editor-src
 into `../public/dm-editor/` (pass another directory as the first argument to
 deploy elsewhere).
 
+### Test build
+
+`./deploy-test.sh` builds the same source with `"homepage": "/dm-editor/test/"`
+and publishes it to `../public/dm-editor-test`, served at
+**https://mc-api.kulih.eu/dm-editor/test/** with a `noindex` robots tag.
+The test build keeps its drafts in a separate `state_test` localStorage slot,
+so experimenting there never touches the production editor state.
+
 The API server serves that folder with `express.static` before rate limiting;
 see `src/api/app.ts` in the mc-api repo. No server restart is needed — only a
 browser refresh (hashed JS/CSS files are immutable, the HTML shell is

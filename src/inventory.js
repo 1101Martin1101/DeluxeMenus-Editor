@@ -2,12 +2,26 @@ import './App.css';
 import { MCText } from './mcparse';
 import { Slot } from './slot';
 import { Search, allItemsList } from './search';
+import {
+  RESOLVED_VIEW,
+  buildGrid,
+  layersFromGrid,
+  layersFromItems,
+  layersToItems,
+  permissionsFromLayers,
+  placeholderTypesFromLayers,
+  prioritiesOf,
+  requirementResult,
+  sizeForLayers,
+  syncGrid,
+} from './priority';
 import { GradientModal } from './gradient';
 import React, { Component } from 'react';
 import AceEditor from 'react-ace';
 import YAML from 'js-yaml';
 import Modal from 'react-modal';
 import _LANG from './lang/english';
+import extraStrings, { formatString } from './lang/extra';
 import fileDownload from 'js-file-download';
 
 import Dropdown from 'react-dropdown';
@@ -30,13 +44,15 @@ const LANGLIST = [
   { value: 'vietnamese', label: 'Tiếng Việt',  flag: 'vn' },
 ];
 
-let LANG = _LANG;
 const _lang = localStorage.getItem('lang') || 'english';
+let LANG = { ..._LANG, ...extraStrings.english, ...(extraStrings[_lang] || {}) };
+const IS_TEST_BUILD = /\/test\/?$/.test(process.env.PUBLIC_URL || '');
+const STATE_KEY = IS_TEST_BUILD ? 'state_test' : 'state';
 
 let selectLang = async (lang) => {
   if (lang && LANGLIST.some(l => l.value === lang)) {
     await import(`./lang/${lang}`).then(res => {
-      LANG = res.default;
+      LANG = { ...res.default, ...extraStrings.english, ...(extraStrings[lang] || {}) };
     });
   }
   localStorage.setItem('lang', lang);
@@ -201,7 +217,7 @@ const fields = () => [
   {
     name: LANG['priority'],
     value: 'priority',
-    extra: true,
+    extra: false,
     type: 'number',
     tagName: 'input'
   },
@@ -346,6 +362,110 @@ const fields = () => [
   },
 ];
 
+const KNOWN_ITEM_FILES = new Set(allItemsList.map(item => item.filename.toLowerCase()));
+
+const BASEHEAD_CACHE = new Map();
+const TEXTURE_HASH_RE = /\/texture\/([0-9a-f]{64})/i;
+
+/** Decode a DeluxeMenus `basehead-<base64>` value to a Mojang texture hash. */
+const baseheadTextureHash = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+
+  if (BASEHEAD_CACHE.has(raw)) return BASEHEAD_CACHE.get(raw);
+
+  let hash = '';
+  if (/^[0-9a-f]{64}$/i.test(raw)) {
+    hash = raw.toLowerCase();
+  } else {
+    const normalized = raw.replace(/\s+/g, '').replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
+    try {
+      const decoded = atob(padded).replace(/\\\//g, '/');
+      const match = decoded.match(TEXTURE_HASH_RE);
+      if (match) hash = match[1].toLowerCase();
+    } catch {
+      hash = '';
+    }
+  }
+
+  BASEHEAD_CACHE.set(raw, hash);
+  return hash;
+};
+
+const isBaseheadMaterial = (material) => {
+  const value = String(material || '').replace(/^minecraft:/i, '').trim();
+  return /^basehead-/i.test(value) || /^head-/i.test(value);
+};
+
+/** The part after `basehead-` / `head-` (case preserved — base64 is case-sensitive). */
+const baseheadValue = (material) => {
+  const value = String(material || '').replace(/^minecraft:/i, '').trim();
+  const index = value.indexOf('-');
+  return index >= 0 ? value.slice(index + 1) : '';
+};
+
+/** Texture URL for a material; unknown/NEXO materials fall back to the site icon. */
+const iconForMaterial = (material) => {
+  const raw = String(material || '').replace(/^minecraft:/i, '').trim();
+  if (!raw) return '';
+
+  if (isBaseheadMaterial(raw)) {
+    const hash = baseheadTextureHash(baseheadValue(raw));
+    if (hash) return `/api/v1/head/${hash}?size=64&overlay=1`;
+    return `${process.env.PUBLIC_URL}/items/player_head.png`;
+  }
+
+  const materialName = raw.toLowerCase();
+  if (!KNOWN_ITEM_FILES.has(materialName)) {
+    return `${process.env.PUBLIC_URL}/brand-icon-192.png`;
+  }
+  return `${process.env.PUBLIC_URL}/items/${materialName}.png`;
+};
+
+const textareaFieldNames = () =>
+  fields().filter(field => field.tagName === 'textarea').map(field => field.value);
+
+const materialAt = (items, id) => {
+  const item = items && items[id];
+  if (!item) return 'none';
+  if (typeof item.material !== 'undefined') return item.material;
+  if (Number.isInteger(item.parent) && items[item.parent]) return items[item.parent].material;
+  return 'none';
+};
+
+const PERMISSION_REQUIREMENT_TYPES = ['has permission', '!has permission'];
+const COMPARISON_REQUIREMENT_TYPES = [
+  '>=', '>', '<=', '<', '==', '!=', 'contains', 'starts with', 'ends with',
+];
+
+const requirementTypeLabel = (type) => {
+  if (type === 'has permission') return LANG['ui_type_has_permission'] || 'Has permission';
+  if (type === '!has permission') return LANG['ui_type_no_permission'] || 'Does NOT have permission';
+  return type;
+};
+
+const isPermissionRequirement = (type) =>
+  String(type || '').toLowerCase().includes('permission');
+
+const stripColorCodes = (text) =>
+  String(text || '').replace(/&(#[0-9a-fA-F]{6}|[0-9a-fk-orA-FK-OR])/g, '').trim();
+
+const itemLabel = (item) => {
+  if (!item) return LANG['ui_empty_item'] || '(empty item)';
+  const name = stripColorCodes(item.display_name);
+  if (name) return name;
+  if (isBaseheadMaterial(item.material)) return LANG['ui_custom_head'] || 'Custom head';
+  const material = String(item.material || '').replace(/_/g, ' ').trim();
+  if (material) {
+    return material.charAt(0).toUpperCase() + material.slice(1).toLowerCase();
+  }
+  return LANG['ui_empty_item'] || '(empty item)';
+};
+
+const INTERNAL_YAML_FIELD = /^\s*_(?:requirementMet|requirementChecks|clickRequirementMet|clickRequirementChecks|layerKey|priority|priorityView):.*\r?\n?/gm;
+const sanitizeYamlText = (text) => String(text || '').replace(INTERNAL_YAML_FIELD, '');
+
 const YAML_DEFAULTS = {
   indent: 2,
   noArrayIndent: false,
@@ -372,6 +492,15 @@ export class Inventory extends Component {
     selected: 0,
     selectedSearch: {},
     items: [],
+    layers: [],
+    priorityView: RESOLVED_VIEW,
+    permissions: {},
+    placeholders: {},
+    simulateRequirements: true,
+    simulateClickRequirements: false,
+    showPriorityBadges: false,
+    inspectorTab: 'item',
+    searchMode: 'replace',
     currentItem: {
       material: 'none'
     },
@@ -472,19 +601,877 @@ export class Inventory extends Component {
     return 'none';
   }
 
+  makeLayerKey = () => {
+    const used = new Set((this.state.layers || []).map(layer => layer.key));
+    let index = this._layerCounter || 0;
+    let key;
+    do {
+      index += 1;
+      key = `item_${index}`;
+    } while (used.has(key));
+    this._layerCounter = index;
+    return key;
+  };
+
+  syncLayers = (items = this.state.items, layers = this.state.layers, view = this.state.priorityView) =>
+    syncGrid(layers || [], items || [], view, this.makeLayerKey);
+
+  requirementCheckLabels = () => ({
+    permission: LANG['ui_permission'] || 'permission',
+    notPermission: LANG['ui_not_permission_word'] || 'NOT permission',
+    now: LANG['ui_now'] || 'now',
+    notSimulatable: LANG['ui_not_simulatable'] || 'not simulatable',
+  });
+
+  requirementContextFor = (
+    layer,
+    permissions = this.state.permissions,
+    placeholders = this.state.placeholders,
+    simulate = this.state.simulateRequirements
+  ) => {
+    if (!simulate) return { pass: true, checks: [] };
+    return requirementResult(layer.item && layer.item.view_requirement, {
+      permissions,
+      placeholders,
+      labels: this.requirementCheckLabels(),
+    });
+  };
+
+  clickRequirementContextFor = (
+    layer,
+    permissions = this.state.permissions,
+    placeholders = this.state.placeholders,
+    simulate = this.state.simulateRequirements
+  ) => {
+    if (!simulate) return { pass: true, checks: [] };
+    return requirementResult(layer.item && layer.item.click_requirement, {
+      permissions,
+      placeholders,
+      labels: this.requirementCheckLabels(),
+    });
+  };
+
+  buildView = (
+    layers,
+    view = this.state.priorityView,
+    permissions = this.state.permissions,
+    placeholders = this.state.placeholders,
+    simulate = this.state.simulateRequirements,
+    strictClick = this.state.simulateClickRequirements
+  ) => buildGrid(
+    layers,
+    view,
+    this.state.size,
+    iconForMaterial,
+    layer => this.requirementContextFor(layer, permissions, placeholders, simulate),
+    layer => this.clickRequirementContextFor(layer, permissions, placeholders, simulate),
+    strictClick
+  );
+
+  allPermissions = () => {
+    const found = new Set(permissionsFromLayers(this.state.layers || []));
+    Object.keys(this.state.permissions || {}).forEach(permission => found.add(permission));
+    return [...found].sort();
+  };
+
+  placeholderTypes = () => placeholderTypesFromLayers(this.state.layers || []);
+
+  allPlaceholders = () => {
+    const found = new Set(Object.keys(this.placeholderTypes()));
+    Object.keys(this.state.placeholders || {}).forEach(key => found.add(key));
+    return [...found];
+  };
+
+  permissionItemCount = (permission) => (this.state.layers || []).filter(layer =>
+    permissionsFromLayers([layer]).includes(permission)
+  ).length;
+
+  toggleSimulation = () => {
+    const layers = this.syncLayers();
+    const simulateRequirements = !this.state.simulateRequirements;
+    const items = this.buildView(
+      layers,
+      this.state.priorityView,
+      this.state.permissions,
+      this.state.placeholders,
+      simulateRequirements,
+      this.state.simulateClickRequirements
+    );
+    this.setState({
+      layers,
+      simulateRequirements,
+      items,
+      currentItem: { material: materialAt(items, this.state.selected) },
+    });
+  };
+
+  toggleClickRequirements = () => {
+    const layers = this.syncLayers();
+    const simulateClickRequirements = !this.state.simulateClickRequirements;
+    const items = this.buildView(
+      layers,
+      this.state.priorityView,
+      this.state.permissions,
+      this.state.placeholders,
+      this.state.simulateRequirements,
+      simulateClickRequirements
+    );
+    this.setState({
+      layers,
+      simulateClickRequirements,
+      items,
+      currentItem: { material: materialAt(items, this.state.selected) },
+    });
+  };
+
+  togglePermission = (permission) => {
+    const layers = this.syncLayers();
+    const permissions = {
+      ...this.state.permissions,
+      [permission]: !this.state.permissions[permission],
+    };
+    const items = this.buildView(
+      layers,
+      this.state.priorityView,
+      permissions,
+      this.state.placeholders,
+      this.state.simulateRequirements,
+      this.state.simulateClickRequirements
+    );
+    this.setState({
+      layers,
+      permissions,
+      items,
+      currentItem: { material: materialAt(items, this.state.selected) },
+    });
+  };
+
+  setAllPermissions = (granted) => {
+    const layers = this.syncLayers();
+    const permissions = {};
+    this.allPermissions().forEach(permission => {
+      permissions[permission] = granted;
+    });
+    const items = this.buildView(
+      layers,
+      this.state.priorityView,
+      permissions,
+      this.state.placeholders,
+      this.state.simulateRequirements,
+      this.state.simulateClickRequirements
+    );
+    this.setState({
+      layers,
+      permissions,
+      items,
+      currentItem: { material: materialAt(items, this.state.selected) },
+    });
+  };
+
+  setPlaceholder = (key, value) => {
+    const layers = this.syncLayers();
+    const placeholders = { ...this.state.placeholders, [key]: value };
+    const items = this.buildView(
+      layers,
+      this.state.priorityView,
+      this.state.permissions,
+      placeholders,
+      this.state.simulateRequirements,
+      this.state.simulateClickRequirements
+    );
+    this.setState({
+      layers,
+      placeholders,
+      items,
+      currentItem: { material: materialAt(items, this.state.selected) },
+    });
+  };
+
+  simulationSummary = () => {
+    const total = (this.state.layers || []).length;
+    if (!this.state.simulateRequirements) return LANG['ui_simulation_off'] || 'Simulation off - requirements ignored.';
+
+    const permissions = this.allPermissions();
+    const granted = permissions.filter(permission => this.state.permissions[permission]).length;
+    const placeholders = this.allPlaceholders().length;
+    const strict = this.state.simulateClickRequirements;
+    const visible = (this.state.layers || []).filter(layer => {
+      if (!this.requirementContextFor(layer).pass) return false;
+      if (strict && !this.clickRequirementContextFor(layer).pass) return false;
+      return true;
+    }).length;
+    const strictLabel = strict ? (LANG['ui_strict_suffix'] || ' - click checks on') : '';
+    const template = LANG['ui_summary'] || '{granted}/{total} perms - {placeholders} placeholders - {visible}/{count} items pass{strict}';
+    return formatString(template, {
+      granted,
+      total: permissions.length,
+      placeholders,
+      visible,
+      count: total,
+      strict: strictLabel,
+    });
+  };
+
+  requirementEntries = (kind) => {
+    const item = this.state.items[this.state.selected];
+    const root = item && item[kind];
+    if (!root || typeof root !== "object" || Array.isArray(root)) return [];
+    const requirements = root.requirements;
+    if (!requirements || typeof requirements !== "object" || Array.isArray(requirements)) return [];
+
+    return Object.entries(requirements).map(([key, value]) => ({
+      key,
+      requirement: value && typeof value === "object" && !Array.isArray(value) ? value : {},
+    }));
+  };
+
+  requirementCount = () =>
+    this.requirementEntries("view_requirement").length +
+    this.requirementEntries("click_requirement").length;
+
+  requirementRowStatus = (requirement) => {
+    if (!this.state.simulateRequirements) return null;
+    return requirementResult(requirement, {
+      permissions: this.state.permissions,
+      placeholders: this.state.placeholders,
+      labels: this.requirementCheckLabels(),
+    });
+  };
+
+  modifyRequirements = (kind, mutator, applyView = false) => {
+    const selected = this.state.items[this.state.selected];
+    if (!selected) return;
+
+    this.layerTargets().forEach(item => {
+      const root = item[kind] && typeof item[kind] === "object" && !Array.isArray(item[kind])
+        ? item[kind]
+        : {};
+      const requirements = root.requirements && typeof root.requirements === "object" && !Array.isArray(root.requirements)
+        ? { ...root.requirements }
+        : {};
+
+      const nextRoot = { ...root, requirements };
+      mutator(nextRoot.requirements);
+
+      if (Object.keys(nextRoot.requirements).length === 0 && Object.keys(root).length <= 1) {
+        delete item[kind];
+      } else {
+        item[kind] = nextRoot;
+      }
+    });
+
+    if (applyView) {
+      const items = this.state.items;
+      const layers = this.syncLayers(items);
+      const grid = this.buildView(layers);
+      this.setState({
+        layers,
+        items: grid,
+        currentItem: { material: materialAt(grid, this.state.selected) },
+      }, this.updateAceFromGrid);
+    } else {
+      this.setState({ items: this.state.items }, this.updateAceFromGrid);
+    }
+  };
+
+  addRequirement = (kind) => {
+    this.modifyRequirements(kind, requirements => {
+      let index = 1;
+      while (requirements[`req_${index}`]) index += 1;
+      requirements[`req_${index}`] = { type: "has permission", permission: "" };
+    }, true);
+  };
+
+  removeRequirement = (kind, key) => {
+    this.modifyRequirements(kind, requirements => {
+      delete requirements[key];
+    }, true);
+  };
+
+  renameRequirement = (kind, oldKey, newKey) => {
+    const clean = String(newKey || "").trim();
+    if (!clean || clean === oldKey) return;
+
+    this.modifyRequirements(kind, requirements => {
+      if (requirements[clean]) return;
+      const entries = Object.entries(requirements).map(([key, value]) => [
+        key === oldKey ? clean : key,
+        value,
+      ]);
+      Object.keys(requirements).forEach(key => delete requirements[key]);
+      entries.forEach(([key, value]) => {
+        requirements[key] = value;
+      });
+    });
+  };
+
+  updateRequirementField = (kind, key, field, value) => {
+    this.modifyRequirements(kind, requirements => {
+      requirements[key] = { ...(requirements[key] || {}), [field]: value };
+    });
+  };
+
+  updateRequirementOutput = (kind, key, value) => {
+    const trimmed = String(value).trim();
+    const parsed = /^-?\d+(\.\d+)?$/.test(trimmed) ? Number(trimmed) : value;
+    this.updateRequirementField(kind, key, "output", parsed);
+  };
+
+  changeRequirementType = (kind, key, type) => {
+    this.modifyRequirements(kind, requirements => {
+      const current = requirements[key] || {};
+      const next = { type };
+
+      if (isPermissionRequirement(type)) {
+        next.permission = current.permission || "";
+      } else {
+        next.input = current.input || "";
+        next.output = current.output !== undefined ? current.output : "";
+      }
+
+      Object.keys(current).forEach(field => {
+        if (!(field in next) && !["type", "permission", "input", "output"].includes(field)) {
+          next[field] = current[field];
+        }
+      });
+
+      requirements[key] = next;
+    }, true);
+  };
+
+  applyRequirementView = () => {
+    const layers = this.syncLayers();
+    const items = this.buildView(layers);
+    this.setState({
+      layers,
+      items,
+      currentItem: { material: materialAt(items, this.state.selected) },
+    });
+  };
+
+  switchInspectorTab = (tab) => {
+    if (this.state.inspectorTab === 'requirements' && tab !== 'requirements') {
+      this.applyRequirementView();
+    }
+    this.setState({ inspectorTab: tab });
+  };
+
+  renderRequirementRow = (kind, key, requirement) => {
+    const type = String(
+      requirement.type || (requirement.permission ? "has permission" : ">=")
+    ).trim();
+    const permissionType = isPermissionRequirement(type);
+    const status = this.requirementRowStatus(requirement);
+    const failed = status && !status.pass ? status.checks.filter(check => !check.pass) : [];
+    const hasUnknown = Boolean(status && status.pass && status.checks.some(check => check.unknown));
+    const knownTypes = [...PERMISSION_REQUIREMENT_TYPES, ...COMPARISON_REQUIREMENT_TYPES];
+
+    return (
+      <div className={`req-row${status && !status.pass ? " fail" : ""}`} key={key}>
+        <div className="req-row-head">
+          <input
+            className="req-key"
+            defaultValue={key}
+            key={key}
+            title={LANG['ui_requirement_key'] || 'Requirement key'}
+            onBlur={event => this.renameRequirement(kind, key, event.target.value)}
+          />
+          <select
+            className="req-type"
+            value={type}
+            onChange={event => this.changeRequirementType(kind, key, event.target.value)}
+          >
+            <optgroup label={LANG['ui_permissions_group'] || 'Permissions'}>
+              {PERMISSION_REQUIREMENT_TYPES.map(option => (
+                <option key={option} value={option}>{requirementTypeLabel(option)}</option>
+              ))}
+            </optgroup>
+            <optgroup label={LANG['ui_comparisons_group'] || 'Comparisons'}>
+              {COMPARISON_REQUIREMENT_TYPES.map(option => (
+                <option key={option} value={option}>{requirementTypeLabel(option)}</option>
+              ))}
+            </optgroup>
+            {!knownTypes.includes(type) && <option value={type}>{requirementTypeLabel(type)}</option>}
+          </select>
+          {status && (
+            <span
+              className={`req-status ${hasUnknown ? 'unknown' : status.pass ? 'ok' : 'fail'}`}
+              title={failed.map(check => check.text).join('\n')}
+            >
+              {hasUnknown
+                ? (LANG['ui_unknown'] || 'unknown')
+                : status.pass
+                  ? (LANG['ui_met'] || 'met')
+                  : (LANG['ui_not_met'] || 'not met')}
+            </span>
+          )}
+          <button
+            type="button"
+            className="req-remove"
+            title={LANG['ui_remove_requirement'] || 'Remove requirement'}
+            onClick={() => this.removeRequirement(kind, key)}
+          >×</button>
+        </div>
+
+        {permissionType ? (
+          <label className="req-field">
+            <span>{LANG['ui_permission'] || 'Permission'}</span>
+            <input
+              value={requirement.permission || ""}
+              placeholder="daily.reward.claimed"
+              onChange={event => this.updateRequirementField(kind, key, "permission", event.target.value)}
+            />
+          </label>
+        ) : (
+          <div className="req-fields">
+            <label className="req-field">
+              <span>{LANG['ui_input'] || 'Input'}</span>
+              <input
+                value={requirement.input === undefined ? "" : requirement.input}
+                placeholder="%playerpoints_points%"
+                onChange={event => this.updateRequirementField(kind, key, "input", event.target.value)}
+              />
+            </label>
+            <label className="req-field">
+              <span>{LANG['ui_output'] || 'Output'}</span>
+              <input
+                value={requirement.output === undefined ? "" : requirement.output}
+                placeholder="50"
+                onChange={event => this.updateRequirementOutput(kind, key, event.target.value)}
+              />
+            </label>
+          </div>
+        )}
+
+        {failed.length > 0 && (
+          <div className="req-checks">
+            {failed.map((check, index) => (
+              <span key={index}>{check.text}</span>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  renderRequirementCard = (kind, title, description) => {
+    const entries = this.requirementEntries(kind);
+
+    return (
+      <div className="req-card">
+        <div className="req-card-head">
+          <div>
+            <div className="req-card-title">{title}</div>
+            <div className="req-card-desc">{description}</div>
+          </div>
+          <button type="button" className="req-add" onClick={() => this.addRequirement(kind)}>
+            {LANG['ui_add'] || '+ Add'}
+          </button>
+        </div>
+
+        {entries.length > 0
+          ? entries.map(({ key, requirement }) => this.renderRequirementRow(kind, key, requirement))
+          : (
+            <div className="req-empty">
+              {kind === "view_requirement"
+                ? (LANG['ui_no_view_requirement'] || 'No view requirement - the item is always shown.')
+                : (LANG['ui_no_click_requirement'] || 'No click requirement - clicking always runs the commands.')}
+            </div>
+          )}
+      </div>
+    );
+  };
+
+  renderRequirementsPane = () => {
+    const item = this.state.items[this.state.selected];
+    const isEmpty = !item || Object.keys(item).filter(key => key !== 'id').length === 0;
+    if (isEmpty) {
+      return <div className="req-empty">{LANG['ui_select_item'] || 'Select an item in the inventory first.'}</div>;
+    }
+
+    const placeholders = this.allPlaceholders();
+
+    return (
+      <div className="requirements-editor">
+        {this.renderRequirementCard(
+          "view_requirement",
+          LANG['ui_view_requirement'] || 'View requirement',
+          LANG['ui_view_requirement_desc'] || 'Controls whether the item is shown (visibility + priority resolution).'
+        )}
+        {this.renderRequirementCard(
+          "click_requirement",
+          LANG['ui_click_requirement'] || 'Click requirement',
+          LANG['ui_click_requirement_desc'] || 'Controls whether click commands run; enable Enforce click checks in Simulation to preview unaffordable items.'
+        )}
+
+        {placeholders.length > 0 && (
+          <div className="req-placeholders">
+            <span>{LANG['ui_placeholders'] || 'Placeholders'}</span>
+            {placeholders.map(placeholder => (
+              <button
+                type="button"
+                key={placeholder}
+                className="req-placeholder"
+                title={LANG['ui_copy_placeholder'] || 'Copy placeholder'}
+                onClick={() => navigator.clipboard && navigator.clipboard.writeText(`%${placeholder}%`)}
+              >%{placeholder}%</button>
+            ))}
+          </div>
+        )}
+
+        <div className="req-footer">
+          <button type="button" className="req-apply" onClick={this.applyRequirementView}>
+            {LANG['ui_re_evaluate'] || 'Re-evaluate view'}
+          </button>
+          <span>{this.simulationSummary()}</span>
+          <span className="req-hint">{LANG['ui_edits_hint'] || 'Edits are saved to YAML immediately; Re-evaluate applies visibility.'}</span>
+        </div>
+      </div>
+    );
+  };
+
+  selectedViewPriority = () => {
+    const match = /^p:(-?\d+)$/.exec(String(this.state.priorityView || ''));
+    return match ? Number(match[1]) : null;
+  };
+
+  nextLayerPriority = (slot = this.state.selected) => {
+    const layers = (this.state.layers || []).filter(layer => layer.slots.includes(slot));
+    if (layers.length === 0) return 0;
+    const highest = Math.min(...layers.map(layer => layer.priority));
+    return Math.max(0, highest - 1);
+  };
+
+  slotLayers = (slot = this.state.selected) => (this.state.layers || [])
+    .filter(layer => layer.slots.includes(slot))
+    .sort((a, b) => a.priority - b.priority);
+
+  focusLayer = (layer) => {
+    const layers = this.syncLayers();
+    const view = `p:${layer.priority}`;
+    const items = this.buildView(layers, view);
+    this.setState({
+      layers,
+      priorityView: view,
+      items,
+      currentItem: { material: materialAt(items, this.state.selected) },
+    }, this.updateAceFromGrid);
+  };
+
+  removeLayer = (key) => {
+    const layers = this.syncLayers().filter(layer => layer.key !== key);
+    const items = this.buildView(layers);
+    this.setState({
+      layers,
+      items,
+      currentItem: { material: materialAt(items, this.state.selected) },
+    }, this.updateAceFromGrid);
+  };
+
+  addPriorityLayer = () => {
+    const selected = this.state.items[this.state.selected];
+    if (!selected) return;
+
+    const layers = this.syncLayers();
+    const item = {};
+    Object.keys(selected).forEach(field => {
+      if (['id', 'icon', 'parent', '_layerKey', '_priority', '_requirementMet', '_requirementChecks', '_clickRequirementMet', '_clickRequirementChecks'].includes(field)) return;
+      item[field] = JSON.parse(JSON.stringify(selected[field]));
+    });
+    delete item.slot;
+    delete item.slots;
+
+    const viewPriority = this.selectedViewPriority();
+    const priority = viewPriority !== null ? viewPriority : 0;
+    if (viewPriority !== null) {
+      item.priority = viewPriority;
+    } else {
+      delete item.priority;
+    }
+
+    const next = [...layers, {
+      key: this.makeLayerKey(),
+      priority,
+      item,
+      slots: [this.state.selected],
+    }];
+
+    const items = this.buildView(next, this.state.priorityView);
+    this.setState({
+      layers: next,
+      items,
+      currentItem: { material: materialAt(items, this.state.selected) },
+    }, this.updateAceFromGrid);
+  };
+
+  openNewLayerSearch = () => {
+    const selected = this.state.selected;
+    this.setState({
+      searchMode: 'new-layer',
+      showModal: true,
+      selected,
+      currentItem: { material: this.computedMaterial(selected) },
+    });
+  };
+
+  renderPriorityPane = () => {
+    const item = this.state.items[this.state.selected];
+    const isEmpty = !item || Object.keys(item).filter(key => key !== 'id').length === 0;
+    if (isEmpty) {
+      return <div className="req-empty">{LANG['ui_select_item'] || 'Select an item in the inventory first.'}</div>;
+    }
+
+    const layers = this.slotLayers();
+    const currentPriority = Number(item.priority) || 0;
+
+    return (
+      <div className="priority-editor">
+        <div className="priority-card">
+          <div className="priority-card-title">{LANG['ui_selected_item'] || 'Selected item'}</div>
+          <div className="priority-editor-stepper">
+            <button
+              type="button"
+              className="priority-step"
+              title={LANG['ui_higher_priority'] || 'Higher priority (lower number)'}
+              onClick={() => this.bumpPriority(-1)}
+            >↑</button>
+            <input
+              type="number"
+              min="0"
+              name="priority"
+              value={currentPriority}
+              onChange={this.updateItem}
+              onBlur={this.applyRequirementView}
+            />
+            <button
+              type="button"
+              className="priority-step"
+              title={LANG['ui_lower_priority'] || 'Lower priority (higher number)'}
+              onClick={() => this.bumpPriority(1)}
+            >↓</button>
+            <span className="priority-editor-hint">{LANG['ui_priority_hint_short'] || 'Lower number = higher priority (1 beats 2).'}</span>
+          </div>
+        </div>
+
+        <div className="priority-card">
+          <div className="priority-card-head">
+            <div>
+              <div className="priority-card-title">{formatString(LANG['ui_layers_on_slot'] || 'Layers on slot {slot}', { slot: this.state.selected })}</div>
+              <div className="priority-card-desc">
+                {LANG['ui_layers_desc'] || 'The item with the lowest priority number whose view requirement passes is shown to players.'}
+              </div>
+            </div>
+            <div className="priority-actions">
+              <button type="button" className="req-add" onClick={this.openNewLayerSearch}>{LANG['ui_new_layer_item'] || '+ New layer item'}</button>
+              <button type="button" className="req-apply" onClick={this.addPriorityLayer}>{LANG['ui_duplicate_item'] || 'Duplicate item'}</button>
+            </div>
+          </div>
+
+          {layers.length === 0
+            ? <div className="req-empty">{LANG['ui_no_layers'] || 'No layers on this slot.'}</div>
+            : layers.map(layer => {
+              const status = this.requirementRowStatus(layer.item.view_requirement || {});
+              const isCurrent = layer.key === item._layerKey;
+              return (
+                <div className={`layer-row${isCurrent ? ' current' : ''}`} key={layer.key}>
+                  <span className="layer-priority">{layer.priority}</span>
+                  <div className="layer-info">
+                    <div className="layer-name">{itemLabel(layer.item)}</div>
+                    <div className="layer-meta">{formatString(LANG['ui_slot_meta'] || 'slot {slot}', { slot: this.state.selected })} · {layer.key}</div>
+                  </div>
+                  {status && (
+                    <span className={`req-status ${status.pass ? 'ok' : 'fail'}`}>
+                      {status.pass ? (LANG['ui_visible'] || 'visible') : (LANG['ui_hidden'] || 'hidden')}
+                    </span>
+                  )}
+                  <button type="button" className="req-apply" onClick={() => this.focusLayer(layer)}>{LANG['ui_focus'] || 'Focus'}</button>
+                  <button type="button" className="req-remove" title={LANG['ui_delete_layer'] || 'Delete layer'} onClick={() => this.removeLayer(layer.key)}>×</button>
+                </div>
+              );
+            })}
+        </div>
+      </div>
+    );
+  };
+
+  computedDocument = (layers = this.syncLayers()) => {
+    const document = {
+      menu_title: this.state.menu_title,
+      open_command: this.state.open_command,
+    };
+    if (this.state.register_command) document.register_command = true;
+    document.size = this.state.size;
+
+    const clamped = (layers || []).map(layer => ({
+      ...layer,
+      slots: layer.slots.filter(slot => slot >= 0 && slot < this.state.size),
+    }));
+    document.items = layersToItems(clamped, textareaFieldNames());
+    return document;
+  };
+
+  /** Parse an already-loaded YAML object into priority layers + the resolved grid. */
+  loadDocument = (content, itemsData, requestedSize, rawText) => {
+    const _fields = fields();
+    const inputTextFields = _fields
+      .filter(field => field.tagName === 'input' && field.type === 'text')
+      .map(field => field.value);
+
+    Object.keys(itemsData || {}).forEach(key => {
+      const item = itemsData[key];
+      if (!item || typeof item !== 'object') return;
+      inputTextFields.forEach(field => {
+        if (typeof item[field] === 'string') {
+          item[field] = item[field].replace(/\n/g, ' ').trim();
+        } else if (Array.isArray(item[field])) {
+          item[field] = item[field].join(' ');
+        }
+      });
+    });
+
+    const layers = layersFromItems(itemsData, textareaFieldNames());
+    const size = Math.min(sizeForLayers(layers, requestedSize || 54), 54);
+    const permissions = {};
+    permissionsFromLayers(layers).forEach(permission => {
+      permissions[permission] = false;
+    });
+
+    const placeholders = {};
+    Object.entries(placeholderTypesFromLayers(layers)).forEach(([key, type]) => {
+      placeholders[key] = type === 'number' ? 0 : '';
+    });
+
+    const context = { permissions, placeholders, labels: this.requirementCheckLabels() };
+    const items = buildGrid(
+      layers,
+      RESOLVED_VIEW,
+      size,
+      iconForMaterial,
+      layer => requirementResult(layer.item && layer.item.view_requirement, context),
+      layer => requirementResult(layer.item && layer.item.click_requirement, context),
+      false
+    );
+    this._layerCounter = layers.length;
+
+    this.setState({
+      menu_title: content.menu_title || this.state.menu_title || LANG['Menu default title'],
+      open_command: content.open_command || this.state.open_command || 'menu',
+      register_command: content.register_command === true,
+      size,
+      layers,
+      priorityView: RESOLVED_VIEW,
+      inspectorTab: 'item',
+      permissions,
+      placeholders,
+      simulateRequirements: true,
+      simulateClickRequirements: false,
+      items,
+      selected: 0,
+      currentItem: { material: materialAt(items, 0) },
+      ...(rawText != null ? { aceValue: rawText } : {}),
+    });
+  };
+
+  setPriorityView = (event) => {
+    const view = event.target.value;
+    const layers = this.syncLayers();
+    const items = this.buildView(layers, view);
+    this.setState({
+      layers,
+      priorityView: view,
+      items,
+      selected: 0,
+      currentItem: { material: materialAt(items, 0) },
+    }, this.updateAceFromGrid);
+  };
+
+  priorities = () => prioritiesOf(this.state.layers || []);
+
+  layerCount = (priority) =>
+    (this.state.layers || []).filter(layer => layer.priority === priority).length;
+
+  bumpPriority = (delta) => {
+    const selected = this.state.items[this.state.selected];
+    if (!selected) return;
+
+    const current = Number(selected.priority) || 0;
+    const next = Math.max(0, current + delta);
+    const key = selected._layerKey;
+
+    const layers = this.syncLayers();
+    const layer = key ? layers.find(item => item.key === key) : null;
+    if (layer) {
+      layer.priority = next;
+      layer.item.priority = next;
+    }
+
+    const items = this.buildView(layers, this.state.priorityView);
+    this.setState({
+      layers,
+      items,
+      currentItem: { material: materialAt(items, this.state.selected) },
+    }, this.updateAceFromGrid);
+  };
+
   _changeLang = async (e) => {
     await selectLang(e.value);
-    this.setState({ currentLang: e.value });
+    this.setState({ currentLang: e.value }, () => {
+      if (this.state.layers && this.state.layers.length) {
+        // Rebuild the grid on the next tick so the new language labels are used
+        // in the stored requirement check texts as well.
+        setTimeout(() => this.applyRequirementView(), 0);
+      }
+    });
   }
 
   componentDidMount() {
     document.addEventListener('mousedown', this._handleOutsideClick);
     this._changeLang({value: _lang});
 
-    let saved = localStorage.getItem('state');
+    let saved = localStorage.getItem(STATE_KEY);
 
     if (saved) {
       const old = JSON.parse(saved);
+
+      // Older saved states had no priority layers: rebuild them from the grid.
+      if (!Array.isArray(old.layers)) {
+        let index = 0;
+        const used = new Set();
+        const makeKey = () => {
+          do {
+            index += 1;
+          } while (used.has(`item_${index}`));
+          used.add(`item_${index}`);
+          return `item_${index}`;
+        };
+        old.layers = layersFromGrid(old.items || [], makeKey);
+      }
+      if (!old.priorityView) old.priorityView = RESOLVED_VIEW;
+      if (!old.permissions || typeof old.permissions !== 'object') old.permissions = {};
+      permissionsFromLayers(old.layers).forEach(permission => {
+        if (!(permission in old.permissions)) old.permissions[permission] = false;
+      });
+      if (typeof old.simulateRequirements !== 'boolean') old.simulateRequirements = true;
+      if (!old.placeholders || typeof old.placeholders !== 'object') old.placeholders = {};
+      Object.entries(placeholderTypesFromLayers(old.layers)).forEach(([key, type]) => {
+        if (!(key in old.placeholders)) old.placeholders[key] = type === 'number' ? 0 : '';
+      });
+      if (typeof old.simulateClickRequirements !== 'boolean') old.simulateClickRequirements = false;
+
+      const savedSize = old.size || (Array.isArray(old.items) ? old.items.length : 54);
+      old.size = savedSize;
+      const context = { permissions: old.permissions, placeholders: old.placeholders, labels: this.requirementCheckLabels() };
+      old.items = buildGrid(
+        old.layers,
+        old.priorityView,
+        savedSize,
+        iconForMaterial,
+        layer => requirementResult(layer.item && layer.item.view_requirement, context),
+        layer => requirementResult(layer.item && layer.item.click_requirement, context),
+        old.simulateClickRequirements
+      );
+
+      this._layerCounter = old.layers.length;
       // Use the saved aceValue directly — recomputing it here would use
       // stale this.state.menu_title (still default) and show wrong YAML after F5
       this.setState({ ...old });
@@ -501,10 +1488,21 @@ export class Inventory extends Component {
     this.setState({
       items: elems,
       size: 9,
+      layers: [],
+      priorityView: RESOLVED_VIEW,
+      permissions: {},
+      placeholders: {},
+      simulateRequirements: true,
+      simulateClickRequirements: false,
       currentItem: {
         material: this.computedMaterial(0)
       },
-      aceValue: YAML.dump(this.computedItems(elems), YAML_DEFAULTS)
+      aceValue: YAML.dump({
+        menu_title: this.state.menu_title,
+        open_command: this.state.open_command,
+        size: 9,
+        items: {},
+      }, YAML_DEFAULTS)
     });
   }
   componentWillUnmount() {
@@ -525,6 +1523,7 @@ export class Inventory extends Component {
     this.setState({
       selected: id,
       showModal: true,
+      searchMode: 'replace',
       currentItem: {
         material: this.computedMaterial(id)
       }
@@ -535,50 +1534,84 @@ export class Inventory extends Component {
   componentDidUpdate(){
     if (this._timeout) clearTimeout(this._timeout);
     this._timeout = setTimeout(() => {
-      localStorage.setItem('state', JSON.stringify(this.state))
+      localStorage.setItem(STATE_KEY, JSON.stringify(this.state))
     }, 500);
   }
 
-  selectedHead = (itm) => {
-    let ar = this.state.items;
-    ar[this.state.selected] = {
-      id: this.state.selected,
-      icon: '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',
-    }
-    this.setState({
-      items: ar,
-    })
-  }
   selectedFromSearch = (itm, obj) => {
-    let ar = this.state.items;
+    const ar = this.state.items;
+
     if (itm === 'copy') {
-      let parent = typeof obj.parent === 'number' ? obj.parent : obj.id;
-      if (typeof ar[parent].slot === 'number') {
-        delete ar[parent].slot;
-        ar[parent].slots = [parent];
+      const source = ar[obj.id] || obj;
+      const layers = this.syncLayers();
+      const layer = layers.find(item => item.key === source._layerKey);
+      if (layer && !layer.slots.includes(this.state.selected)) {
+        layer.slots = [...layer.slots, this.state.selected].sort((a, b) => a - b);
       }
-
-      ar[parent].slots = [...ar[parent].slots, this.state.selected];
-
-      ar[this.state.selected] = {
-        id: this.state.selected,
-        parent,
-      }
-    } else {
-      ar[this.state.selected] = {
-        id: this.state.selected,
-        icon: itm.icon,
-        material: itm.name.replace(/ /g, '_').toUpperCase(),
-        slot: this.state.selected,
-      }
+      const items = this.buildView(layers, this.state.priorityView);
+      this.setState({
+        layers,
+        items,
+        currentItem: { material: materialAt(items, this.state.selected) },
+      }, this.updateAceFromGrid);
+      this.closeModal();
+      return;
     }
+
+    const material = itm.name.replace(/ /g, '_').toUpperCase();
+    const selected = this.state.selected;
+    const current = ar[selected];
+
+    if (this.state.searchMode === 'new-layer') {
+      const layers = this.syncLayers();
+      const viewPriority = this.selectedViewPriority();
+      const priority = viewPriority !== null ? viewPriority : 0;
+      const next = [...layers, {
+        key: this.makeLayerKey(),
+        priority,
+        item: viewPriority !== null ? { material, priority: viewPriority } : { material },
+        slots: [selected],
+      }];
+      const items = this.buildView(next, this.state.priorityView);
+      this.setState({
+        layers: next,
+        items,
+        searchMode: 'replace',
+        currentItem: { material: materialAt(items, selected) },
+      }, this.updateAceFromGrid);
+      this.closeModal();
+      return;
+    }
+
+    if (current && current._layerKey) {
+      const layers = this.syncLayers();
+      const layer = layers.find(item => item.key === current._layerKey);
+      if (layer) layer.item = { ...layer.item, material };
+      const items = this.buildView(layers, this.state.priorityView);
+      this.setState({
+        layers,
+        items,
+        currentItem: { material: materialAt(items, selected) },
+      }, this.updateAceFromGrid);
+      this.closeModal();
+      return;
+    }
+
+    const layers = this.syncLayers();
+    const viewPriority = this.selectedViewPriority();
+    const priority = viewPriority !== null ? viewPriority : 0;
+    const next = [...layers, {
+      key: this.makeLayerKey(),
+      priority,
+      item: viewPriority !== null ? { material, priority: viewPriority } : { material },
+      slots: [selected],
+    }];
+    const items = this.buildView(next, this.state.priorityView);
     this.setState({
-      items: ar,
-      currentItem: {
-        material: this.computedMaterial(this.state.selected)
-      },
-      aceValue: YAML.dump(this.computedItems(ar), this.state.yaml)
-    });
+      layers: next,
+      items,
+      currentItem: { material: materialAt(items, selected) },
+    }, this.updateAceFromGrid);
     this.closeModal();
   }
 
@@ -602,87 +1635,9 @@ export class Inventory extends Component {
         itemsData = content;
       }
 
-      let size = content.size || this.state.size || 54;
-      
-      // Auto-expand size if needed
-      Object.keys(itemsData).forEach(key => {
-        const item = itemsData[key];
-        if (!item || typeof item !== 'object') return;
-        if (typeof item.slot === 'number') size = Math.max(size, item.slot + 1);
-        else if (Array.isArray(item.slots)) size = Math.max(size, Math.max(...item.slots) + 1);
-        else if (typeof item.slot === 'string' && item.slot.includes('-')) {
-          const [start, end] = item.slot.split('-').map(Number);
-          size = Math.max(size, end + 1);
-        }
-      });
-      size = Math.min(Math.ceil(size / 9) * 9, 54);
-      
-      let newItems = [];
-      for (let i = 0; i < size; i++) {
-        newItems.push({ id: i });
-      }
-
-      const _fields = fields();
-      const textAreaFields = _fields.filter(f => f.tagName === 'textarea').map(f => f.value);
-      const inputTextFields = _fields.filter(f => f.tagName === 'input' && f.type === 'text').map(f => f.value);
-
-      Object.keys(itemsData).forEach(key => {
-        const item = itemsData[key];
-        if (!item || typeof item !== 'object') return;
-
-        textAreaFields.forEach(tf => {
-          if (Array.isArray(item[tf])) {
-            item[tf] = item[tf].join('\n');
-          }
-        });
-
-        // Input fields (e.g. display_name) must be single-line — strip newlines
-        inputTextFields.forEach(f => {
-          if (typeof item[f] === 'string') {
-            item[f] = item[f].replace(/\n/g, ' ').trim();
-          } else if (Array.isArray(item[f])) {
-            item[f] = item[f].join(' ');
-          }
-        });
-
-        // Ensure key itself is treated as a slot index if it's numeric
-        let slots = [];
-        if (!isNaN(key)) slots = [Number(key)];
-
-        // But prefer explicit slot/slots property if present
-        if (typeof item.slot === 'number') slots = [item.slot];
-        else if (Array.isArray(item.slots)) slots = item.slots;
-        else if (typeof item.slot === 'string' && item.slot.includes('-')) {
-          const [start, end] = item.slot.split('-').map(Number);
-          for (let s = start; s <= end; s++) slots.push(s);
-        }
-
-        if (slots.length > 0) {
-          let icon = undefined;
-          if (item.material) {
-            const matString = String(item.material);
-            if (matString.toLowerCase().startsWith('basehead-') || matString.toLowerCase().startsWith('head-')) {
-              icon = `${process.env.PUBLIC_URL}/items/player_head.png`;
-            } else {
-              icon = `${process.env.PUBLIC_URL}/items/${matString.toLowerCase()}.png`;
-            }
-          }
-
-          slots.forEach((s, idx) => {
-            if (s < size && newItems[s]) {
-              newItems[s] = { ...item, id: s, parent: idx === 0 ? undefined : slots[0], icon: icon || item.icon };
-            }
-          });
-        }
-      });
-
-      this.setState({
-        menu_title: content.menu_title || this.state.menu_title || LANG['Menu default title'],
-        open_command: content.open_command || this.state.open_command || 'menu',
-        register_command: content.register_command === true,
-        size: size,
-        items: newItems
-      });
+      const size = content.size || this.state.size || 54;
+      const cleanText = sanitizeYamlText(newValue);
+      this.loadDocument(content, itemsData, size, cleanText !== newValue ? cleanText : undefined);
 
     } catch (e) {
       if (isManual) _setAceError(e.message, e.mark ? e.mark.line : 0);
@@ -726,8 +1681,10 @@ export class Inventory extends Component {
   }
   
   updateAceFromGrid = () => {
+    const layers = this.syncLayers();
     this.setState({
-      aceValue: YAML.dump(this.computedItems(), this.state.yaml)
+      layers,
+      aceValue: YAML.dump(this.computedDocument(layers), this.state.yaml)
     });
   }
   handleName = (e) => {
@@ -742,28 +1699,23 @@ export class Inventory extends Component {
   }
   downloadYaml = () => {
     const cmd = (this.state.open_command || 'menu').trim().replace(/[^a-zA-Z0-9_-]/g, '_') || 'menu';
-    fileDownload(YAML.dump(this.computedItems(), this.state.yaml), `${cmd}.yml`);
+    fileDownload(YAML.dump(this.computedDocument(), this.state.yaml), `${cmd}.yml`);
   }
   clearSlot = () => {
-    let ar = this.state.items;
+    const selected = this.state.items[this.state.selected];
+    if (!selected || !selected._layerKey) return;
 
-    ar[this.state.selected] = {id: this.state.selected};
+    const layers = this.syncLayers().map(layer => (
+      layer.key === selected._layerKey
+        ? { ...layer, slots: layer.slots.filter(slot => slot !== this.state.selected) }
+        : layer
+    )).filter(layer => layer.slots.length > 0);
 
-    for (let i = 0; i < ar.length; i += 1) {
-      if (typeof ar[i].slots !== 'undefined' && ar[i].slots.includes(this.state.selected)) {
-        let index = ar[i].slots.indexOf(this.state.selected);
-
-        ar[i].slots.splice(index, 1);
-
-        if (ar[i].slots.length === 1) {
-          ar[i].slot = ar[i].slots[0];
-          delete ar[i].slots;
-        }
-      }
-    }
-
+    const items = this.buildView(layers, this.state.priorityView);
     this.setState({
-      items: ar,
+      layers,
+      items,
+      currentItem: { material: materialAt(items, this.state.selected) },
     }, this.updateAceFromGrid);
   }
   changeSize = (e) => {
@@ -771,15 +1723,15 @@ export class Inventory extends Component {
       if (this.state.items.length === 9) {
         return;
       }
+      const items = this.state.items.slice(0, this.state.items.length - 9);
+      const size = this.state.size - 9;
+      const selected = this.state.selected >= items.length ? 0 : this.state.selected;
       this.setState({
-        items: this.state.items.slice(0, this.state.items.length-9),
-        size: this.state.size-9
-      });
-      if (this.state.selected > this.state.items.length-10) {
-        this.setState({
-          selected: 0
-        })
-      }
+        items,
+        size,
+        selected,
+        currentItem: { material: materialAt(items, selected) },
+      }, this.updateAceFromGrid);
     }
     if (e.currentTarget.textContent === LANG['button Add row']) {
       if (this.state.items.length > 50 ) {
@@ -805,6 +1757,7 @@ export class Inventory extends Component {
   showExtra = () => {
     this.setState({
       extra: !this.state.extra,
+      inspectorTab: 'item',
     });
   }
   resetYaml = (e) => {
@@ -839,8 +1792,18 @@ export class Inventory extends Component {
       showYAMLOpts: !this.state.showYAMLOpts,
     });
   }
+  layerTargets = () => {
+    const ar = this.state.items;
+    const selected = ar[this.state.selected];
+    if (!selected) return [];
+    if (selected._layerKey) {
+      return ar.filter(item => item && item._layerKey === selected._layerKey);
+    }
+    return [selected];
+  };
+
   updateItem = (e) => {
-    let ar = this.state.items;
+    const ar = this.state.items;
 
     if (!ar[this.state.selected]) {
       return;
@@ -851,7 +1814,7 @@ export class Inventory extends Component {
     switch (e.target.type) {
       case 'number':
         if (e.target.value === '') {
-          delete ar[this.state.selected][e.target.name];
+          this.layerTargets().forEach(item => delete item[e.target.name]);
           this.setState({ items: ar }, this.updateAceFromGrid);
           return;
         }
@@ -868,15 +1831,17 @@ export class Inventory extends Component {
         break;
     }
 
-    ar[this.state.selected][e.target.name] = val;
+    this.layerTargets().forEach(item => {
+      item[e.target.name] = val;
 
-    if ((e.target.type === 'text' || e.target.type === 'textarea') && val === '') {
-      delete ar[this.state.selected][e.target.name];
-    }
+      if ((e.target.type === 'text' || e.target.type === 'textarea') && val === '') {
+        delete item[e.target.name];
+      }
 
-    if (e.target.type === 'checkbox' && val === false) {
-      delete ar[this.state.selected][e.target.name];
-    }
+      if (e.target.type === 'checkbox' && val === false) {
+        delete item[e.target.name];
+      }
+    });
 
     this.setState({
       items: ar,
@@ -884,10 +1849,12 @@ export class Inventory extends Component {
   }
 
   insertCommandPrefix = (fieldName, prefix) => {
-    const ar = [...this.state.items];
+    const ar = this.state.items;
     if (!ar[this.state.selected]) return;
-    const current = ar[this.state.selected][fieldName] || '';
-    ar[this.state.selected][fieldName] = current ? current + '\n' + prefix + ' ' : prefix + ' ';
+    this.layerTargets().forEach(item => {
+      const current = item[fieldName] || '';
+      item[fieldName] = current ? current + '\n' + prefix + ' ' : prefix + ' ';
+    });
     this.setState({ items: ar }, this.updateAceFromGrid);
   };
 
@@ -904,9 +1871,11 @@ export class Inventory extends Component {
       return;
     }
 
-    const ar = [...this.state.items];
+    const ar = this.state.items;
     if (!ar[this.state.selected]) return;
-    ar[this.state.selected][gradientField.name] = value;
+    this.layerTargets().forEach(item => {
+      item[gradientField.name] = value;
+    });
     this.setState({ items: ar, showGradient: false, gradientField: null }, this.updateAceFromGrid);
   };
 
@@ -926,78 +1895,8 @@ export class Inventory extends Component {
           return;
         }
 
-        let newItems = [];
-        let size = content.size || 54;
-        
-        // Find maximum slot used to dynamically adjust size if needed
-        Object.keys(itemsData).forEach(key => {
-          const item = itemsData[key];
-          if (!item || typeof item !== 'object') return;
-          if (typeof item.slot === 'number') size = Math.max(size, item.slot + 1);
-          else if (Array.isArray(item.slots)) size = Math.max(size, Math.max(...item.slots) + 1);
-          else if (typeof item.slot === 'string' && item.slot.includes('-')) {
-            // eslint-disable-next-line
-            const [start, end] = item.slot.split('-').map(Number);
-            size = Math.max(size, end + 1);
-          }
-        });
-
-        // Ensure size is multiple of 9, max 54
-        size = Math.min(Math.ceil(size / 9) * 9, 54);
-
-        for(let i=0; i<size; i++) {
-          newItems.push({id: i});
-        }
-
-        const _fields = fields();
-        const textAreaFields = _fields.filter(f => f.tagName === 'textarea').map(f => f.value);
-
-        Object.keys(itemsData).forEach(key => {
-          const item = itemsData[key];
-          if (!item || typeof item !== 'object') return;
-
-          textAreaFields.forEach(tf => {
-            if (Array.isArray(item[tf])) {
-              item[tf] = item[tf].join('\n');
-            }
-          });
-
-          let slots = [];
-          if (typeof item.slot === 'number') slots = [item.slot];
-          else if (Array.isArray(item.slots)) slots = item.slots;
-          else if (typeof item.slot === 'string' && item.slot.includes('-')) {
-            const [start, end] = item.slot.split('-').map(Number);
-            for (let s = start; s <= end; s++) slots.push(s);
-          }
-
-          if (slots.length > 0) {
-            let icon = undefined;
-            if (item.material) {
-              const matString = String(item.material);
-              if (matString.toLowerCase().startsWith('basehead-') || matString.toLowerCase().startsWith('head-')) {
-                icon = `${process.env.PUBLIC_URL}/items/player_head.png`;
-              } else {
-                icon = `${process.env.PUBLIC_URL}/items/${matString.toLowerCase()}.png`;
-              }
-            }
-
-            slots.forEach((s, idx) => {
-              if (s < size && newItems[s]) {
-                newItems[s] = { ...item, id: s, parent: idx === 0 ? undefined : slots[0], icon: icon || item.icon };
-              }
-            });
-          }
-        });
-
-        this.setState({
-          menu_title: content.menu_title || LANG['Menu default title'],
-          open_command: content.open_command || 'menu',
-          register_command: content.register_command === true,
-          size: size,
-          items: newItems,
-          selected: 0,
-          aceValue: event.target.result
-        });
+        const size = content.size || 54;
+        this.loadDocument(content, itemsData, size, sanitizeYamlText(event.target.result));
       } catch (err) {
         alert("Error loading YAML: " + err.message);
       }
@@ -1047,12 +1946,119 @@ export class Inventory extends Component {
             </div>
           </div>
 
+          <div className="priority-bar">
+            <div className="priority-view">
+              <span className="priority-view-label">{LANG['ui_priority_view'] || 'Priority view'}</span>
+              <select
+                className="priority-select"
+                value={this.state.priorityView}
+                onChange={this.setPriorityView}
+              >
+                <option value={RESOLVED_VIEW}>{LANG['ui_resolved_view'] || 'Resolved (highest priority)'}</option>
+                {this.priorities().map(priority => (
+                  <option key={priority} value={`p:${priority}`}>
+                    {formatString(LANG['ui_priority_option'] || 'Priority {priority} · {count} items', { priority, count: this.layerCount(priority) })}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <span className="priority-hint">
+              {this.state.priorityView === RESOLVED_VIEW
+                ? (LANG['ui_priority_hint_resolved'] || 'Lowest priority number wins each slot (1 beats 2).')
+                : (LANG['ui_priority_hint_layer'] || 'Editing this priority layer only; other priorities stay intact.')}
+            </span>
+            <label className="priority-badge-toggle" title={LANG['ui_numbers_title'] || 'Show priority numbers on inventory slots'}>
+              <input
+                type="checkbox"
+                checked={this.state.showPriorityBadges}
+                onChange={() => this.setState(s => ({ showPriorityBadges: !s.showPriorityBadges }))}
+              />
+              <span>{LANG['ui_numbers'] || 'Numbers'}</span>
+            </label>
+          </div>
+
+          <div className={`simulation-panel${this.state.simulateRequirements ? '' : ' off'}`}>
+            <div className="simulation-head">
+              <span className="simulation-title">{LANG['ui_simulation_title'] || 'Requirement simulation'}</span>
+              <label className="simulation-toggle">
+                <input
+                  type="checkbox"
+                  checked={this.state.simulateRequirements}
+                  onChange={this.toggleSimulation}
+                />
+                <span>{this.state.simulateRequirements ? (LANG['ui_enabled'] || 'Enabled') : (LANG['ui_off'] || 'Off')}</span>
+              </label>
+              <label
+                className="simulation-toggle"
+                title={LANG['ui_enforce_click_title'] || 'When enabled, items whose click requirement fails are hidden in the resolved view too.'}
+              >
+                <input
+                  type="checkbox"
+                  checked={this.state.simulateClickRequirements}
+                  onChange={this.toggleClickRequirements}
+                  disabled={!this.state.simulateRequirements}
+                />
+                <span>{LANG['ui_enforce_click'] || 'Enforce click requirements'}</span>
+              </label>
+              <div className="simulation-actions">
+                <button type="button" onClick={() => this.setAllPermissions(true)}>{LANG['ui_grant_all'] || 'Grant all'}</button>
+                <button type="button" onClick={() => this.setAllPermissions(false)}>{LANG['ui_revoke_all'] || 'Revoke all'}</button>
+              </div>
+              <span className="simulation-summary">{this.simulationSummary()}</span>
+            </div>
+            {this.allPermissions().length > 0 ? (
+              <div className="permission-chips">
+                {this.allPermissions().map(permission => (
+                  <label
+                    key={permission}
+                    className={`permission-chip${this.state.permissions[permission] ? ' granted' : ''}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={!!this.state.permissions[permission]}
+                      onChange={() => this.togglePermission(permission)}
+                      disabled={!this.state.simulateRequirements}
+                    />
+                    <code>{permission}</code>
+                    <span className="permission-count">{this.permissionItemCount(permission)}</span>
+                  </label>
+                ))}
+              </div>
+            ) : (
+              <div className="simulation-empty">{LANG['ui_no_permissions'] || 'No permission checks in this menu.'}</div>
+            )}
+            {this.allPlaceholders().length > 0 && (
+              <div className="placeholder-list">
+                <span className="placeholder-list-label">{LANG['ui_placeholders'] || 'Placeholders'}</span>
+                {this.allPlaceholders().map(key => {
+                  const type = this.placeholderTypes()[key] || 'text';
+                  const value = this.state.placeholders[key];
+                  return (
+                    <label className="placeholder-field" key={key}>
+                      <code>{key}</code>
+                      <span className="placeholder-kind">{type === 'number' ? 'num' : 'text'}</span>
+                      <input
+                        type="text"
+                        inputMode={type === 'number' ? 'decimal' : 'text'}
+                        value={value === undefined || value === null ? '' : value}
+                        onChange={event => this.setPlaceholder(key, event.target.value)}
+                        disabled={!this.state.simulateRequirements}
+                        title={`${type} placeholder - enter any value`}
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
           <div className="toolbar">
-            <button onClick={() => {localStorage.clear();window.location.reload(false);}}>{LANG['button CLEAR']}</button>
+            <button onClick={() => {localStorage.removeItem(STATE_KEY);window.location.reload(false);}}>{LANG['button CLEAR']}</button>
             <button onClick={this.clearSlot}>{LANG['button Clear slot']}</button>
             <button onClick={this.changeSize}>{LANG['button Remove row']}</button>
             <button onClick={this.changeSize}>{LANG['button Add row']}</button>
             <button onClick={this.showExtra}>{this.state.extra ? LANG['button Hide extra'] : LANG['button Show extra']}</button>
+            <button onClick={this.openNewLayerSearch}>{LANG['ui_layer_item'] || '+ Layer item'}</button>
           </div>
 
           <div className="inventory">
@@ -1074,6 +2080,15 @@ export class Inventory extends Component {
                   isSelected={this.state.selected === el.id}
                   icon={(Number.isInteger(el.parent) && this.state.items[el.parent]) ? this.state.items[el.parent].icon : el.icon}
                   material={this.computedMaterial(el.id)}
+                  priority={el._priority !== undefined ? el._priority : el.priority}
+                  requirementMet={el._requirementMet !== false}
+                  requirementChecks={el._requirementChecks || []}
+                  clickRequirementMet={el._clickRequirementMet !== false}
+                  clickRequirementChecks={el._clickRequirementChecks || []}
+                  hasClickRequirement={!!el.click_requirement}
+                  simulateRequirements={this.state.simulateRequirements}
+                  showPriority={this.state.showPriorityBadges}
+                  lang={LANG}
                   enchantments={(Number.isInteger(el.parent) && this.state.items[el.parent]) ? this.state.items[el.parent].enchantments : el.enchantments}
                   hide_enchantments={(Number.isInteger(el.parent) && this.state.items[el.parent]) ? this.state.items[el.parent].hide_enchantments : el.hide_enchantments}
                 />
@@ -1081,8 +2096,33 @@ export class Inventory extends Component {
             </div>
           </div>
 
-          <div className="info-section">
-            <div className="section-header">{LANG['Menu info']}</div>
+          <div className="inspector-tabs">
+            <button
+              type="button"
+              className={this.state.inspectorTab === 'item' ? 'active' : ''}
+              onClick={() => this.switchInspectorTab('item')}
+            >{LANG['ui_item_tab'] || 'Item'}</button>
+            <button
+              type="button"
+              className={this.state.inspectorTab === 'requirements' ? 'active' : ''}
+              onClick={() => this.switchInspectorTab('requirements')}
+            >
+              {LANG['ui_requirements_tab'] || 'Requirements'}
+              {this.requirementCount() > 0 && <span className="tab-badge">{this.requirementCount()}</span>}
+            </button>
+            <button
+              type="button"
+              className={this.state.inspectorTab === 'priority' ? 'active' : ''}
+              onClick={() => this.switchInspectorTab('priority')}
+            >{LANG['ui_priority_tab'] || 'Priority'}</button>
+            <button
+              type="button"
+              className={this.state.inspectorTab === 'menu' ? 'active' : ''}
+              onClick={() => this.switchInspectorTab('menu')}
+            >{LANG['ui_menu_tab'] || 'Menu'}</button>
+          </div>
+
+          <div className={`info-section inspector-pane${this.state.inspectorTab === 'menu' ? ' active' : ''}`}>
             <div className="value">
               <span>{LANG['menu_title']}:</span>
               <div className="input-row">
@@ -1111,15 +2151,40 @@ export class Inventory extends Component {
             </div>
           </div>
 
-          <div className="info-section">
-            <div className="section-header">{LANG['Item info']}</div>
-            {fields().map((el, i) => (
+          <div className={`info-section inspector-pane${this.state.inspectorTab === 'item' ? ' active' : ''}`}>
+            {fields().filter(el => el.value !== 'priority').map((el, i) => (
               <div
                 key={i}
                 className={`value${(!el.extra || this.state.extra) ? '' : ' field-hidden'}`}
               >
                 <span>{el.name}:</span>
-                {el.gradient ? (
+                {el.value === 'priority' ? (
+                  <div className="priority-stepper">
+                    <button
+                      type="button"
+                      className="priority-step"
+                      onClick={() => this.bumpPriority(-1)}
+                      aria-label="Decrease priority"
+                    >−</button>
+                    <input
+                      type="number"
+                      min="0"
+                      name="priority"
+                      value={(() => {
+                        const item = this.state.items[this.state.selected];
+                        const value = item ? item.priority : '';
+                        return value === undefined || value === null ? '' : value;
+                      })()}
+                      onChange={this.updateItem}
+                    />
+                    <button
+                      type="button"
+                      className="priority-step"
+                      onClick={() => this.bumpPriority(1)}
+                      aria-label="Increase priority"
+                    >+</button>
+                  </div>
+                ) : el.gradient ? (
                   <div className="input-row">
                     <el.tagName
                       value={this.state.items[this.state.selected] ? this.state.items[this.state.selected][el.value] || '' : ''}
@@ -1186,6 +2251,14 @@ export class Inventory extends Component {
                 )}
               </div>
             ))}
+          </div>
+
+          <div className={`info-section inspector-pane${this.state.inspectorTab === 'requirements' ? ' active' : ''}`}>
+            {this.renderRequirementsPane()}
+          </div>
+
+          <div className={`info-section inspector-pane${this.state.inspectorTab === 'priority' ? ' active' : ''}`}>
+            {this.renderPriorityPane()}
           </div>
 
         </div>
@@ -1270,7 +2343,7 @@ export class Inventory extends Component {
         >
            <Search
              selectedFromSearch={this.selectedFromSearch}
-             title={LANG['Search items']}
+             title={this.state.searchMode === 'new-layer' ? (LANG['ui_search_new_layer'] || 'Search items for new priority layer') : LANG['Search items']}
            />
          <br />
          {LANG['Your configured items']}
